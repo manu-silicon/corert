@@ -4,10 +4,13 @@
 
 using System;
 
-internal class Program
+namespace repro
 {
-    private static void Main(string[] args)
+    internal class Program
     {
-        Console.WriteLine("Hello world");
+        private static void Main(string[] args)
+        {
+            Console.WriteLine("Hello world");
+        }
     }
 }

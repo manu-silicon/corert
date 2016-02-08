@@ -76,7 +76,34 @@ namespace ILCompiler
             return (sb != null) ? sb.ToString() : s;
         }
 
+        /// <summary>
+        /// Dictionary given a mangled name for a given <see cref="TypeDesc"/> 
+        /// </summary>
         private ImmutableDictionary<TypeDesc, string> _mangledTypeNames = ImmutableDictionary<TypeDesc, string>.Empty;
+
+        /// <summary>
+        /// Set of names already computed for <see cref="_mangledTypeNames"/>.
+        /// Needed to ensure bijective mapping between a <see cref="TypeDesc"/> and a mangled name.
+        /// </summary>
+        private ImmutableHashSet<string>_reversedMangledTypeNames = ImmutableHashSet<string>.Empty;
+
+        /// <summary>
+        /// Given a set of names <param name="set"/> check if <param name="origName"/>
+        /// is unique, if not add a numbered suffix until it becomes unique.
+        /// </summary>
+        /// <param name="origName">Name to check for uniqueness.</param>
+        /// <param name="set">Set of names already used.</param>
+        /// <returns>A name based on <param name="origName"/> that is not part of <param name="set"/>.</returns>
+        private string DisambiguateName(string origName, ImmutableHashSet<string> set)
+        {
+            int iter = 0;
+            string result = origName;
+            while (set.Contains(result))
+            {
+                result = string.Concat(origName, (iter++).ToString());
+            }
+            return result;
+        }
 
         public string GetMangledTypeName(TypeDesc type)
         {
@@ -87,6 +114,14 @@ namespace ILCompiler
             return ComputeMangledTypeName(type);
         }
 
+        /// <summary>
+        /// If given <param name="type"/> is an <see cref="EcmaType"/> precompute its mangled type name
+        /// along with all the other types from the same module as <param name="type"/>.
+        /// Otherwise, it is a constructed type and to the EcmaType's mangled name we add a suffix to
+        /// show what kind of constructed type it is (e.g. appending __Array for an array type). 
+        /// </summary>
+        /// <param name="type">Type to mangled</param>
+        /// <returns>Mangled name for <param name="type"/>.</returns>
         private string ComputeMangledTypeName(TypeDesc type)
         {
             if (type is EcmaType)
@@ -99,7 +134,7 @@ namespace ILCompiler
                 // they are compiled
                 lock (this)
                 {
-                    foreach (MetadataType t in ((EcmaType)type).EcmaModule.GetAllTypes())
+                    foreach (MetadataType t in ((EcmaType) type).EcmaModule.GetAllTypes())
                     {
                         string name = t.GetFullName();
 
@@ -116,7 +151,7 @@ namespace ILCompiler
                         if (deduplicator.Contains(name))
                         {
                             string nameWithIndex;
-                            for (int index = 1; ; index++)
+                            for (int index = 1;; index++)
                             {
                                 nameWithIndex = name + "_" + index.ToString(CultureInfo.InvariantCulture);
                                 if (!deduplicator.Contains(nameWithIndex))
@@ -127,11 +162,19 @@ namespace ILCompiler
                         deduplicator.Add(name);
 
                         if (_compilation.IsCppCodeGen)
-                            name = prependAssemblyName + "::" + name;
+                        {
+                            // Always generate a fully qualified name
+                            name = "::" + prependAssemblyName + "::" + name;
+                        }
                         else
+                        {
                             name = prependAssemblyName + "_" + name;
+                        }
 
+                        // Ensure that name is unique and update our tables accordingly.
+                        name = DisambiguateName(name, _reversedMangledTypeNames);
                         _mangledTypeNames = _mangledTypeNames.Add(t, name);
+                        _reversedMangledTypeNames = _reversedMangledTypeNames.Add(name);
                     }
                 }
 
@@ -156,6 +199,9 @@ namespace ILCompiler
                     mangledName = GetMangledTypeName(((PointerType)type).ParameterType) + "__Pointer";
                     break;
                 default:
+                    // Case of a generic type. If `type' is a type definition we use the type name
+                    // for mangling, otherwise we use the mangling of the type and its generic type
+                    // parameters, e.g. A <B> becomes A__B.
                     var typeDefinition = type.GetTypeDefinition();
                     if (typeDefinition != type)
                     {
@@ -179,7 +225,10 @@ namespace ILCompiler
 
             lock (this)
             {
+                // Ensure that name is unique and update our tables accordingly.
+                mangledName= DisambiguateName(mangledName, _reversedMangledTypeNames);
                 _mangledTypeNames = _mangledTypeNames.Add(type, mangledName);
+                _reversedMangledTypeNames = _reversedMangledTypeNames.Add(mangledName);
             }
 
             return mangledName;
