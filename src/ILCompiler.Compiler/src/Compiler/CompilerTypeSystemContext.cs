@@ -99,7 +99,10 @@ namespace ILCompiler
         }
         private ModuleHashtable _moduleHashtable = new ModuleHashtable();
 
-        private class SimpleNameHashtable : LockFreeReaderHashtable<string, ModuleData>
+        /// <summary>
+        /// Mapping between simple names and a list of modules sharing that simple name.
+        /// </summary>
+        private class SimpleNameHashtable : LockFreeReaderHashtable<string, List<ModuleData>>
         {
             StringComparer _comparer = StringComparer.OrdinalIgnoreCase;
 
@@ -107,19 +110,19 @@ namespace ILCompiler
             {
                 return _comparer.GetHashCode(key);
             }
-            protected override int GetValueHashCode(ModuleData value)
+            protected override int GetValueHashCode(List<ModuleData> value)
             {
-                return _comparer.GetHashCode(value.SimpleName);
+                return _comparer.GetHashCode(value[0].SimpleName);
             }
-            protected override bool CompareKeyToValue(string key, ModuleData value)
+            protected override bool CompareKeyToValue(string key, List<ModuleData> value)
             {
-                return _comparer.Equals(key, value.SimpleName);
+                return _comparer.Equals(key, value[0].SimpleName);
             }
-            protected override bool CompareValueToValue(ModuleData value1, ModuleData value2)
+            protected override bool CompareValueToValue(List<ModuleData> value1, List<ModuleData> value2)
             {
-                return _comparer.Equals(value1.SimpleName, value2.SimpleName);
+                return _comparer.Equals(value1[0].SimpleName, value2[0].SimpleName);
             }
-            protected override ModuleData CreateValueFromKey(string key)
+            protected override List<ModuleData> CreateValueFromKey(string key)
             {
                 Debug.Assert(false, "CreateValueFromKey not supported");
                 return null;
@@ -132,19 +135,29 @@ namespace ILCompiler
         {
         }
 
-        public IReadOnlyDictionary<string, string> InputFilePaths
+        /// <summary>
+        /// List of assemblies to process.
+        /// Associate for each simple name, the list of assembly full path names matching the simple name.
+        /// Useful when including multiple assemblies with same name from different locations.
+        /// </summary>
+        public IReadOnlyDictionary<string, List<string>> InputFilePaths
         {
             get;
             set;
         }
 
-        public IReadOnlyDictionary<string, string> ReferenceFilePaths
+        /// <summary>
+        /// List of assemblies referenced by assemblies to process stored in <see cref="InputFilePaths"/>.
+        /// Associate for each simple name, the list of assembly full path names matching the simple name.
+        /// Useful when including multiple assemblies with same name from different locations.
+        /// </summary>
+        public IReadOnlyDictionary<string, List<string>> ReferenceFilePaths
         {
             get;
             set;
         }
 
-        public void SetSystemModule(EcmaModule systemModule)
+        public void SetSystemModule(ModuleDesc systemModule)
         {
             InitializeSystemModule(systemModule);
 
@@ -165,29 +178,127 @@ namespace ILCompiler
             return _wellKnownTypes[(int)wellKnownType - 1];
         }
 
-        public override ModuleDesc ResolveAssembly(System.Reflection.AssemblyName name, bool throwIfNotFound)
+        public override ModuleDesc ResolveAssembly(System.Reflection.AssemblyName name, bool throwIfNotFoundOrAmbiguous = true)
         {
-            return GetModuleForSimpleName(name.Name, throwIfNotFound);
+            var list = GetModulesForSimpleName(name.Name, throwIfNotFoundOrAmbiguous);
+            int n = 0;
+            EcmaModule result = null;
+            if (list != null)
+            {
+                if (list.Count == 1)
+                {
+                    result = list[0].Module;
+                    if (throwIfNotFoundOrAmbiguous && !IsAssemblyNameCompatible(result.GetName(), name))
+                    {
+                        throw new NotSupportedException("Non-matching assembly found. Expected " + name.FullName + " but got " + result.GetName().FullName);
+                    }
+                    return result;
+                }
+                else
+                {
+                    foreach (var module in list)
+                    {
+                        if (IsAssemblyNameCompatible(module.Module.GetName(), name))
+                        {
+                            result = module.Module;
+                            n++;
+                        }
+                    }
+                }
+            }
+            if ((n == 0) && throwIfNotFoundOrAmbiguous)
+            {
+                throw new FileNotFoundException("Assembly not found: " + name.FullName);
+            }
+            if ((n > 1) && throwIfNotFoundOrAmbiguous)
+            {
+                // TODO: Ideally this should not happen and the command line should only include
+                // TODO: one of them, not more. For now, we do nothing and return the last found.
+                // throw new NotImplementedException(
+                //    "Two or more assemblies with the same FullName but different paths: " + name.FullName);
+            }
+            return result;
         }
 
-        public EcmaModule GetModuleForSimpleName(string simpleName, bool throwIfNotFound = true)
+        /// <summary>
+        /// Is assembly <param name="source"/> compatible with <param name="target"/>? For now we compare
+        /// that they have the same name, <param name="source"/> has a greater version than expected,
+        /// and if <param name="target"/> is signed that <param name="source"/> has the same public key.
+        /// </summary>
+        /// <param name="source">Source assembly</param>
+        /// <param name="target">Expected assembly</param>
+        /// <returns>True if <param name="source"/> is a good replacement for <param name="target"/></returns>
+        private static bool IsAssemblyNameCompatible(System.Reflection.AssemblyName source, System.Reflection.AssemblyName target)
         {
-            ModuleData existing;
-            if (_simpleNameHashtable.TryGetValue(simpleName, out existing))
-                return existing.Module;
-
-            string filePath;
-            if (!InputFilePaths.TryGetValue(simpleName, out filePath))
+            if (source.Name == target.Name)
             {
-                if (!ReferenceFilePaths.TryGetValue(simpleName, out filePath))
+                bool isSame = true;
+                if (target.Version != null)
                 {
-                    if (throwIfNotFound)
+                    // Ensure that source has a version greater than target.
+                    isSame = (source.Version != null) && (source.Version >= target.Version);
+                }
+                if (isSame)
+                {
+                    // Compare the public key token
+                    var targetToken = target.GetPublicKeyToken();
+                    if (targetToken != null)
+                    {
+                        var sourceToken = source.GetPublicKeyToken();
+                        if (sourceToken == targetToken)
+                            return true;
+
+                        if (sourceToken == null)
+                            return false;
+
+                        if (sourceToken.Length != targetToken.Length)
+                            return false;
+
+                        for (int i = 0; i < sourceToken.Length; i++)
+                        {
+                            if (sourceToken[i] != targetToken[i])
+                                return false;
+                        }
+                        return true;
+                    }
+                    else
+                    {
+                        return true;
+                    }
+                }
+            }
+            return false;
+        }
+
+        public ModuleDesc GetModuleForSimpleName(string simpleName, bool throwIfNotFoundOrAmbiguous = true)
+        {
+            var name = new System.Reflection.AssemblyName(simpleName);
+            return ResolveAssembly(name, throwIfNotFoundOrAmbiguous);
+        }
+
+        private List<ModuleData> GetModulesForSimpleName(string simpleName, bool throwIfNotFoundOrAmbiguous = true)
+        {
+            List<ModuleData> existing;
+            if (_simpleNameHashtable.TryGetValue(simpleName, out existing))
+                return existing;
+
+            List<string> listFilePath;
+            if (!InputFilePaths.TryGetValue(simpleName, out listFilePath))
+            {
+                if (!ReferenceFilePaths.TryGetValue(simpleName, out listFilePath))
+                {
+                    if (throwIfNotFoundOrAmbiguous)
                         throw new FileNotFoundException("Assembly not found: " + simpleName);
                     return null;
                 }
             }
 
-            return AddModule(filePath, simpleName);
+            var moduleList = new List<ModuleData>(listFilePath.Count);
+            foreach (var filePath in listFilePath)
+            {
+                moduleList.Add(AddModule(filePath, simpleName));
+            }
+            return moduleList;
         }
 
         public EcmaModule GetModuleFromPath(string filePath)
@@ -199,7 +310,7 @@ namespace ILCompiler
                     return entry.Module;
             }
 
-            return AddModule(filePath, null);
+            return AddModule(filePath, null).Module;
         }
 
         private unsafe static PEReader OpenPEFile(string filePath, out MemoryMappedViewAccessor mappedViewAccessor)
@@ -235,7 +346,7 @@ namespace ILCompiler
             }
         }
 
-        private EcmaModule AddModule(string filePath, string expectedSimpleName)
+        private ModuleData AddModule(string filePath, string expectedSimpleName)
         {
             MemoryMappedViewAccessor mappedViewAccessor = null;
             try
@@ -257,15 +368,32 @@ namespace ILCompiler
                     Module = module,
                     MappedViewAccessor = mappedViewAccessor
                 };
+                var list = new List<ModuleData>(1);
+                list.Add(moduleData);
 
                 lock (this)
                 {
-                    ModuleData actualModuleData = _simpleNameHashtable.AddOrGetExisting(moduleData);
-                    if (actualModuleData != moduleData)
+                    List<ModuleData> actualModuleDataList = _simpleNameHashtable.AddOrGetExisting(list);
+                    if (actualModuleDataList != list)
                     {
-                        if (actualModuleData.FilePath != filePath)
-                            throw new FileNotFoundException("Module with same simple name already exists " + filePath);
-                        return actualModuleData.Module;
+                        // Insert moduleData in list if not already present.
+                        ModuleData foundModuleData = null;
+                        for (int i = 0, nb = actualModuleDataList.Count; (foundModuleData == null) && (i < nb); i++)
+                        {
+                            if (actualModuleDataList[i].FilePath == filePath)
+                            {
+                                foundModuleData = actualModuleDataList[i];
+                            }
+                        }
+                        if (foundModuleData != null)
+                        {
+                            // Module was previously found, we can return the computed value immediately
+                            return foundModuleData;
+                        }
+                        else
+                        {
+                            actualModuleDataList.Add(moduleData);
+                        }
                     }
                     mappedViewAccessor = null; // Ownership has been transfered
 
@@ -275,7 +403,7 @@ namespace ILCompiler
                 // TODO: Thread-safety for symbol reading
                 InitializeSymbolReader(moduleData);
 
-                return module;
+                return moduleData;
             }
             finally
             {

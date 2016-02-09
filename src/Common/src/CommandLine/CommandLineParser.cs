@@ -63,7 +63,7 @@ namespace Internal.CommandLine
 
             return _args[_current++];
         }
-        public void AppendExpandedPaths(Dictionary<string, string> dictionary, bool strict)
+        public void AppendExpandedPaths(Dictionary<string, List<string>> dictionary, bool strict)
         {
             string pattern = GetStringValue();
 
@@ -80,22 +80,31 @@ namespace Internal.CommandLine
                 foreach (string fileName in Directory.EnumerateFiles(directoryName, searchPattern))
                 {
                     string fullFileName = Path.GetFullPath(fileName);
-
                     string simpleName = Path.GetFileNameWithoutExtension(fileName);
 
-                    if (dictionary.ContainsKey(simpleName))
+                    // Lookup an existing assembly
+                    List<string> list = null;
+                    if (!dictionary.TryGetValue(simpleName, out list))
                     {
-                        if (strict)
-                        {
-                            throw new CommandLineException("Multiple input files matching same simple name " +
-                                fullFileName + " " + dictionary[simpleName]);
-                        }
+                        // Normal case
+                        list = new List<string>(1);
+                        list.Add(fullFileName);
+                        dictionary.Add(simpleName, list);
                     }
                     else
                     {
-                        dictionary.Add(simpleName, fullFileName);
+                        if (list.Contains(fullFileName))
+                        {
+                            if (strict)
+                            {
+                                throw new CommandLineException("Repeated input files " + fullFileName);
+                            }
+                        }
+                        else
+                        {
+                            list.Add(fullFileName);
+                        }
                     }
-
                     empty = false;
                 }
             }

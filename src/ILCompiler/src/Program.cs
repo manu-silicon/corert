@@ -18,8 +18,8 @@ namespace ILCompiler
     {
         private CompilationOptions _options;
 
-        private Dictionary<string, string> _inputFilePaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
-        private Dictionary<string, string> _referenceFilePaths = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, List<string>> _inputFilePaths = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
+        private Dictionary<string, List<string>> _referenceFilePaths = new Dictionary<string, List<string>>(StringComparer.OrdinalIgnoreCase);
 
         private bool _help;
 

@@ -21,11 +21,23 @@ namespace ILCompiler
 {
     public class CompilationOptions
     {
-        public IReadOnlyDictionary<string, string> InputFilePaths;
-        public IReadOnlyDictionary<string, string> ReferenceFilePaths;
+        /// <summary>
+        /// Associate for each simple name, the list of assembly full path names matching the simple name.
+        /// Useful when including multiple assemblies with same name from different locations.
+        /// </summary>
+        public IReadOnlyDictionary<string, List<string>> InputFilePaths;
+
+        /// <summary>
+        /// Associate for each simple name, the list of assembly full path names matching the simple name.
+        /// Useful when including multiple assemblies with same name from different locations.
+        /// </summary>
+        public IReadOnlyDictionary<string, List<string>> ReferenceFilePaths;
 
         public string OutputFilePath;
 
+        /// <summary>
+        /// Core library used to find know types.
+        /// </summary>
         public string SystemModuleName;
 
         public TargetOS TargetOS;
@@ -58,6 +70,7 @@ namespace ILCompiler
             _typeSystemContext.InputFilePaths = options.InputFilePaths;
             _typeSystemContext.ReferenceFilePaths = options.ReferenceFilePaths;
 
+            // Lookup for Core assembly
             _typeSystemContext.SetSystemModule(_typeSystemContext.GetModuleForSimpleName(options.SystemModuleName));
 
             _nameMangler = new NameMangler(this);
@@ -194,13 +207,16 @@ namespace ILCompiler
         {
             foreach (var inputFile in _typeSystemContext.InputFilePaths)
             {
-                var module = _typeSystemContext.GetModuleFromPath(inputFile.Value);
+                foreach (var file in inputFile.Value)
+                {
+                    var module = _typeSystemContext.GetModuleFromPath(file);
 
-                if (module.PEReader.PEHeaders.IsExe)
-                    AddCompilationRootsForMainMethod(module);
+                    if (module.PEReader.PEHeaders.IsExe)
+                        AddCompilationRootsForMainMethod(module);
 
-                AddCompilationRootsForRuntimeExports(module);
-           }
+                    AddCompilationRootsForRuntimeExports(module);
+                }
+            }
 
             AddCompilationRootsForRuntimeExports((EcmaModule)_typeSystemContext.SystemModule);
         }
