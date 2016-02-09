@@ -94,13 +94,13 @@ namespace ILCompiler
         /// <param name="origName">Name to check for uniqueness.</param>
         /// <param name="set">Set of names already used.</param>
         /// <returns>A name based on <param name="origName"/> that is not part of <param name="set"/>.</returns>
-        private string DisambiguateName(string origName, ImmutableHashSet<string> set)
+        private string DisambiguateName(string origName, ISet<string> set)
         {
             int iter = 0;
             string result = origName;
             while (set.Contains(result))
             {
-                result = string.Concat(origName, (iter++).ToString());
+                result = string.Concat(origName, "_", (iter++).ToString(CultureInfo.InvariantCulture));
             }
             return result;
         }
@@ -128,8 +128,6 @@ namespace ILCompiler
             {
                 string prependAssemblyName = SanitizeName(((EcmaType)type).EcmaModule.GetName().Name);
 
-                var deduplicator = new HashSet<string>();
-
                 // Add consistent names for all types in the module, independent on the order in which 
                 // they are compiled
                 lock (this)
@@ -147,19 +145,6 @@ namespace ILCompiler
                         }
 
                         name = SanitizeName(name, true);
-
-                        if (deduplicator.Contains(name))
-                        {
-                            string nameWithIndex;
-                            for (int index = 1;; index++)
-                            {
-                                nameWithIndex = name + "_" + index.ToString(CultureInfo.InvariantCulture);
-                                if (!deduplicator.Contains(nameWithIndex))
-                                    break;
-                            }
-                            name = nameWithIndex;
-                        }
-                        deduplicator.Add(name);
 
                         if (_compilation.IsCppCodeGen)
                         {
@@ -263,17 +248,7 @@ namespace ILCompiler
                     {
                         string name = SanitizeName(m.Name);
 
-                        if (deduplicator.Contains(name))
-                        {
-                            string nameWithIndex;
-                            for (int index = 1; ; index++)
-                            {
-                                nameWithIndex = name + "_" + index.ToString(CultureInfo.InvariantCulture);
-                                if (!deduplicator.Contains(nameWithIndex))
-                                    break;
-                            }
-                            name = nameWithIndex;
-                        }
+                        name = DisambiguateName(name, deduplicator);
                         deduplicator.Add(name);
 
                         if (prependTypeName != null)
@@ -349,17 +324,7 @@ namespace ILCompiler
                     {
                         string name = SanitizeName(f.Name);
 
-                        if (deduplicator.Contains(name))
-                        {
-                            string nameWithIndex;
-                            for (int index = 1; ; index++)
-                            {
-                                nameWithIndex = name + "_" + index.ToString(CultureInfo.InvariantCulture);
-                                if (!deduplicator.Contains(nameWithIndex))
-                                    break;
-                            }
-                            name = nameWithIndex;
-                        }
+                        name = DisambiguateName(name, deduplicator);
                         deduplicator.Add(name);
 
                         if (prependTypeName != null)
