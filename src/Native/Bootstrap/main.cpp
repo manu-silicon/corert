@@ -73,8 +73,15 @@ extern "C" void * RhpHandleAlloc(void * pObject, int handleType);
 #define DLL_PROCESS_ATTACH      1
 extern "C" BOOL WINAPI RtuDllMain(HANDLE hPalInstance, DWORD dwReason, void* pvReserved);
 
+REDHAWK_PALIMPORT bool REDHAWK_PALAPI PalInit();
+
 int __initialize_runtime()
 {
+    if (!PalInit())
+    {
+        return 1;
+    }
+
     RtuDllMain(NULL, DLL_PROCESS_ATTACH, NULL);
 
     RhpEnableConservativeStackReporting();
@@ -291,8 +298,8 @@ int __statics_fixup()
 }
 
 #if defined(_WIN32)
-extern "C" int __managed__Main(int argc, char* argv[]); // TODO: Use wchar_t
-int main(int argc, char* argv[]) // TODO: Use wmain and wchar_t
+extern "C" int __managed__Main(int argc, wchar_t* argv[]);
+int wmain(int argc, wchar_t* argv[])
 #else
 extern "C" int __managed__Main(int argc, char* argv[]);
 int main(int argc, char* argv[])

@@ -29,6 +29,9 @@
     </ProjectReference>
   </ItemGroup>
   <ItemGroup>
+    <Compile Include="..\..\Common\src\TypeSystem\IL\Stubs\EETypePtrOfIntrinsic.cs">
+      <Link>IL\Stubs\EETypePtrOfIntrinsic.cs</Link>
+    </Compile>
     <Compile Include="Compiler\AsmStringWriter.cs" />
     <Compile Include="Compiler\Compilation.cs" />
     <Compile Include="Compiler\CompilerMetadataFieldLayoutAlgorithm.cs" />
@@ -78,6 +81,7 @@
     <Compile Include="Compiler\SymbolReader\PortablePdbSymbolReader.cs" />
     <Compile Include="Compiler\SymbolReader\UnmanagedPdbSymbolReader.cs" />
     <Compile Include="Compiler\VirtualMethodCallHelper.cs" />
+    <Compile Include="CppCodeGen\CppGenerationBuffer.cs" />
     <Compile Include="CppCodeGen\CppWriter.cs" />
     <Compile Include="IL\Stubs\StartupCode\StartupCodeMainMethod.cs" />
   </ItemGroup>
