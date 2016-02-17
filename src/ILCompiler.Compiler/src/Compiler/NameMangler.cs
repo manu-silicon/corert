@@ -70,14 +70,14 @@ namespace ILCompiler
                 }
 
                 // Everything else is replaced by underscore.
-                // TODO: We assume that there won't be collisions with our own or C++ built-in identifiers.                
+                // TODO: We assume that there won't be collisions with our own or C++ built-in identifiers.
                 sb.Append("_");
             }
             return (sb != null) ? sb.ToString() : s;
         }
 
         /// <summary>
-        /// Dictionary given a mangled name for a given <see cref="TypeDesc"/> 
+        /// Dictionary given a mangled name for a given <see cref="TypeDesc"/>
         /// </summary>
         private ImmutableDictionary<TypeDesc, string> _mangledTypeNames = ImmutableDictionary<TypeDesc, string>.Empty;
 
@@ -118,7 +118,7 @@ namespace ILCompiler
         /// If given <param name="type"/> is an <see cref="EcmaType"/> precompute its mangled type name
         /// along with all the other types from the same module as <param name="type"/>.
         /// Otherwise, it is a constructed type and to the EcmaType's mangled name we add a suffix to
-        /// show what kind of constructed type it is (e.g. appending __Array for an array type). 
+        /// show what kind of constructed type it is (e.g. appending __Array for an array type).
         /// </summary>
         /// <param name="type">Type to mangled</param>
         /// <returns>Mangled name for <param name="type"/>.</returns>
