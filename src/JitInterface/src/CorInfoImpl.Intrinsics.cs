@@ -103,7 +103,7 @@ namespace Internal.JitInterface
             table.Add(CorInfoIntrinsics.CORINFO_INTRINSIC_StringGetChar, "get_Chars", "System", "String");
             table.Add(CorInfoIntrinsics.CORINFO_INTRINSIC_StringLength, "get_Length", "System", "String");
             table.Add(CorInfoIntrinsics.CORINFO_INTRINSIC_InitializeArray, "InitializeArray", "System.Runtime.CompilerServices", "RuntimeHelpers");
-            table.Add(CorInfoIntrinsics.CORINFO_INTRINSIC_GetTypeFromHandle, "GetTypeFromHandle", "System", "Type");
+            //table.Add(CorInfoIntrinsics.CORINFO_INTRINSIC_GetTypeFromHandle, "GetTypeFromHandle", "System", "Type"); // RuntimeTypeHandle has to be RuntimeType
             table.Add(CorInfoIntrinsics.CORINFO_INTRINSIC_RTH_GetValueInternal, "GetValueInternal", "System", "RuntimeTypeHandle");
             // table.Add(CorInfoIntrinsics.CORINFO_INTRINSIC_TypeEQ, "op_Equality", "System", "Type"); // not in .NET Core
             // table.Add(CorInfoIntrinsics.CORINFO_INTRINSIC_TypeNEQ, "op_Inequality", "System", "Type"); // not in .NET Core
@@ -131,8 +131,10 @@ namespace Internal.JitInterface
 
         static IntrinsicHashtable s_IntrinsicHashtable = InitializeIntrinsicHashtable();
 
-        private CorInfoIntrinsics getIntrinsicID(CORINFO_METHOD_STRUCT_* ftn)
+        private CorInfoIntrinsics getIntrinsicID(CORINFO_METHOD_STRUCT_* ftn, ref bool pMustExpand)
         {
+            pMustExpand = false;
+
             var method = HandleToObject(ftn);
 
             Debug.Assert(method.IsIntrinsic);
@@ -188,6 +190,11 @@ namespace Internal.JitInterface
                             id = (CorInfoIntrinsics)((int)id + 1);
                         }
                     }
+                    break;
+
+                case CorInfoIntrinsics.CORINFO_INTRINSIC_RTH_GetValueInternal:
+                case CorInfoIntrinsics.CORINFO_INTRINSIC_InitializeArray:
+                    pMustExpand = true;
                     break;
 
                 default:

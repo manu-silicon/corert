@@ -57,9 +57,14 @@
 
     // Retrieve shadow location from the stack and restore original DESTREG to the stack. This is an
     // additional memory barrier we don't require but it's on the rare path and x86 doesn't have an xchg
-    // variant that doesn't implicitly specify the lock prefix.
+    // variant that doesn't implicitly specify the lock prefix. Note that INVALIDGCVALUE is a 64-bit
+    // immediate and therefore must be moved into a register before it can be written to the shadow
+    // location.
     xchg    [rsp], \DESTREG
-    mov     qword ptr [\DESTREG], INVALIDGCVALUE
+    push    \REFREG
+    movabs  \REFREG, INVALIDGCVALUE
+    mov     qword ptr [\DESTREG], \REFREG
+    pop     \REFREG
 
 \BASENAME\()_UpdateShadowHeap_PopThenDone_\REFREG:
     // Restore original DESTREG value from the stack.
@@ -245,6 +250,12 @@ LEAF_END RhpCheckedXchg, _TEXT
 LEAF_ENTRY RhpByRefAssignRef, _TEXT
     mov     rcx, [rsi]
     mov     [rdi], rcx
+
+    // Check whether the writes were even into the heap. If not there's no card update required.
+    cmp     rdi, [C_VAR(g_lowest_address)]
+    jb      RhpByRefAssignRef_NotInHeap
+    cmp     rdi, [C_VAR(g_highest_address)]
+    jae     RhpByRefAssignRef_NotInHeap
 
     // Update the shadow copy of the heap with the same value just written to the same heap. (A no-op unless
     // we're in a debug build and write barrier checking has been enabled).

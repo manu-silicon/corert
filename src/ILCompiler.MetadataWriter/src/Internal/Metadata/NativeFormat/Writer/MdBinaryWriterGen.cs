@@ -8,9 +8,9 @@
 
 using System;
 using System.IO;
-using System.Linq;
 using System.Collections.Generic;
 using System.Reflection;
+using Internal.LowLevelLinq;
 using Internal.NativeFormat;
 using Debug = System.Diagnostics.Debug;
 
@@ -556,6 +556,28 @@ namespace Internal.Metadata.NativeFormat.Writer
             }
             writer.WriteUnsigned((uint)values.Count());
             foreach (Field value in values)
+            {
+                writer.Write(value);
+            }
+        } // Write
+
+        public static void Write(this NativeWriter writer, QualifiedField record)
+        {
+            if (record != null)
+                writer.WriteUnsigned((uint)record.Handle.Offset);
+            else
+                writer.WriteUnsigned(0);
+        } // Write
+
+        public static void Write(this NativeWriter writer, IEnumerable<QualifiedField> values)
+        {
+            if (values == null)
+            {
+                writer.WriteUnsigned(0);
+                return;
+            }
+            writer.WriteUnsigned((uint)values.Count());
+            foreach (QualifiedField value in values)
             {
                 writer.Write(value);
             }

@@ -60,4 +60,14 @@ extern "C"
     {
         throw "OutputDebugStringW";
     }
+
+    uint32_t GetCurrentThreadId()
+    {
+        throw "GetCurrentThreadId";
+    }
+
+    uint32_t RhCompatibleReentrantWaitAny(uint32_t alertable, uint32_t timeout, uint32_t count, void* pHandles)
+    {
+        throw "RhCompatibleReentrantWaitAny";
+    }
 }

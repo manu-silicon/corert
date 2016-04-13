@@ -7,7 +7,7 @@
 #include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "gcrhinterface.h"
 #include "varint.h"
@@ -290,7 +290,8 @@ void Thread::Construct()
     // alloc_context ever needs different initialization, a matching change to the tls_CurrentThread 
     // static initialization will need to be made.
 
-    m_uPalThreadId = PalGetCurrentThreadId();
+    m_uPalThreadIdForLogging = PalGetCurrentThreadIdForLogging();
+    m_threadId.SetToCurrentThread();
 
     HANDLE curProcessPseudo = PalGetCurrentProcess();
     HANDLE curThreadPseudo  = PalGetCurrentThread();
@@ -377,9 +378,14 @@ bool Thread::CatchAtSafePoint()
 
 #ifndef DACCESS_COMPILE
 
-UInt32 Thread::GetPalThreadId()
+UInt64 Thread::GetPalThreadIdForLogging()
 {
-    return m_uPalThreadId;
+    return m_uPalThreadIdForLogging;
+}
+
+bool Thread::IsCurrentThread()
+{
+    return m_threadId.IsCurrentThread();
 }
 
 void Thread::Destroy()
@@ -710,8 +716,8 @@ bool Thread::InternalHijack(PAL_LIMITED_CONTEXT * pSuspendCtx, void* HijackTarge
         }
     }
 
-    STRESS_LOG3(LF_STACKWALK, LL_INFO10000, "InternalHijack: TgtThread = %x, IP = %p, result = %d\n", 
-        GetPalThreadId(), pSuspendCtx->GetIp(), fSuccess);
+    STRESS_LOG3(LF_STACKWALK, LL_INFO10000, "InternalHijack: TgtThread = %llx, IP = %p, result = %d\n", 
+        GetPalThreadIdForLogging(), pSuspendCtx->GetIp(), fSuccess);
 
     return fSuccess;
 }
@@ -1058,11 +1064,12 @@ PTR_UInt8 Thread::AllocateThreadLocalStorageForDynamicType(UInt32 uTlsTypeOffset
     return m_pDynamicTypesTlsCells[uTlsTypeOffset];
 }
 
+#ifndef PLATFORM_UNIX
 EXTERN_C REDHAWK_API UInt32 __cdecl RhCompatibleReentrantWaitAny(UInt32_BOOL alertable, UInt32 timeout, UInt32 count, HANDLE* pHandles)
 {
     return PalCompatibleWaitAny(alertable, timeout, count, pHandles, /*allowReentrantWait:*/ TRUE);
 }
-
+#endif // PLATFORM_UNIX
 
 EXTERN_C volatile UInt32 RhpTrapThreads;
 

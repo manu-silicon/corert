@@ -24,6 +24,7 @@
 #include <sched.h>
 #include <sys/mman.h>
 #include <sys/types.h>
+#include <sys/syscall.h>
 #include <dlfcn.h>
 #include <dirent.h>
 #include <string.h>
@@ -32,6 +33,14 @@
 #include <fcntl.h>
 #include <sys/time.h>
 #include <cstdarg>
+
+#if HAVE_PTHREAD_GETTHREADID_NP
+#include <pthread_np.h>
+#endif
+
+#if HAVE_LWP_SELF
+#include <lwp.h>
+#endif
 
 #if !HAVE_SYSCONF && !HAVE_SYSCTL
 #error Neither sysconf nor sysctl is present on the current system
@@ -70,10 +79,6 @@ using std::nullptr_t;
 
 #include "gcenv.structs.h"
 
-#ifdef CORERT // @TODO: Collisions between assert.h headers
-#define assert(expr) ASSERT(expr)
-#endif
-
 #define REDHAWK_PALEXPORT extern "C"
 #define REDHAWK_PALAPI
 
@@ -100,10 +105,25 @@ using std::nullptr_t;
     } \
     while(0)
 
+typedef union _LARGE_INTEGER {
+    struct {
+#if BIGENDIAN
+        int32_t HighPart;
+        uint32_t LowPart;
+#else
+        uint32_t LowPart;
+        int32_t HighPart;
+#endif
+    } u;
+    int64_t QuadPart;
+} LARGE_INTEGER, *PLARGE_INTEGER;
+
 typedef void * LPSECURITY_ATTRIBUTES;
 typedef void* PCONTEXT;
 typedef void* PEXCEPTION_RECORD;
 typedef void* PEXCEPTION_POINTERS;
+
+#define INVALID_HANDLE_VALUE    ((HANDLE)(IntNative)-1)
 
 typedef Int32 (__stdcall *PVECTORED_EXCEPTION_HANDLER)(
     PEXCEPTION_POINTERS ExceptionInfo
@@ -146,15 +166,50 @@ static pthread_key_t g_threadKey;
 extern bool PalQueryProcessorTopology();
 bool InitializeFlushProcessWriteBuffers();
 
+extern "C" void RaiseFailFastException(PEXCEPTION_RECORD arg1, PCONTEXT arg2, UInt32 arg3)
+{
+    // Abort aborts the process and causes creation of a crash dump
+    abort();
+}
+
 void TimeSpecAdd(timespec* time, uint32_t milliseconds)
 {
-    time->tv_nsec += milliseconds * tccMilliSecondsToNanoSeconds;
-    if (time->tv_nsec > tccSecondsToNanoSeconds)
+    uint64_t nsec = time->tv_nsec + (uint64_t)milliseconds * tccMilliSecondsToNanoSeconds;
+    if (nsec >= tccSecondsToNanoSeconds)
     {
-        time->tv_sec += (time->tv_nsec - tccSecondsToNanoSeconds) / tccSecondsToNanoSeconds;
-        time->tv_nsec %= tccSecondsToNanoSeconds;
+        time->tv_sec += nsec / tccSecondsToNanoSeconds;
+        nsec %= tccSecondsToNanoSeconds;
     }
+
+    time->tv_nsec = nsec;
 }
+
+#ifdef __APPLE__
+// Convert nanoseconds to the timespec structure
+// Parameters:
+//  nanoseconds - time in nanoseconds to convert
+//  t           - the target timespec structure
+void NanosecondsToTimespec(uint64_t nanoseconds, timespec* t)
+{
+    t->tv_sec = nanoseconds / tccSecondsToNanoSeconds;
+    t->tv_nsec = nanoseconds % tccSecondsToNanoSeconds;
+}
+#endif // __APPLE__
+
+void ReleaseCondAttr(pthread_condattr_t* condAttr)
+{
+    int st = pthread_condattr_destroy(condAttr);
+    ASSERT_MSG(st == 0, "Failed to destroy pthread_condattr_t object");
+}
+
+class PthreadCondAttrHolder : public Wrapper<pthread_condattr_t*, DoNothing, ReleaseCondAttr, nullptr>
+{
+public:
+    PthreadCondAttrHolder(pthread_condattr_t* attrs)
+    : Wrapper<pthread_condattr_t*, DoNothing, ReleaseCondAttr, nullptr>(attrs)
+    {
+    }
+};
 
 class UnixEvent
 {
@@ -162,70 +217,100 @@ class UnixEvent
     pthread_mutex_t m_mutex;
     bool m_manualReset;
     bool m_state;
-
-    void Update(bool state)
-    {
-        pthread_mutex_lock(&m_mutex);
-        m_state = state;
-        // Unblock all threads waiting for the condition variable
-        pthread_cond_broadcast(&m_condition);
-        pthread_mutex_unlock(&m_mutex);
-    }
+    bool m_isValid;
 
 public:
 
     UnixEvent(bool manualReset, bool initialState)
     : m_manualReset(manualReset),
-      m_state(initialState)
+      m_state(initialState),
+      m_isValid(false)
     {
-        int st = pthread_mutex_init(&m_mutex, NULL);
-        ASSERT(st == NULL);
-
-        pthread_condattr_t attrs;
-        st = pthread_condattr_init(&attrs);
-        ASSERT(st == NULL);
-
-#if HAVE_CLOCK_MONOTONIC
-        // Ensure that the pthread_cond_timedwait will use CLOCK_MONOTONIC
-        st = pthread_condattr_setclock(&attrs, CLOCK_MONOTONIC);
-        ASSERT(st == NULL);
-#endif // HAVE_CLOCK_MONOTONIC
-
-        st = pthread_cond_init(&m_condition, &attrs);
-        ASSERT(st == NULL);
-
-        st = pthread_condattr_destroy(&attrs);
-        ASSERT(st == NULL);
     }
 
-    ~UnixEvent()
+    bool Initialize()
     {
-        int st = pthread_mutex_destroy(&m_mutex);
-        ASSERT(st == NULL);
+        pthread_condattr_t attrs;
+        int st = pthread_condattr_init(&attrs);
+        if (st != 0)
+        {
+            ASSERT_UNCONDITIONALLY("Failed to initialize UnixEvent condition attribute");
+            return false;
+        }
 
-        st = pthread_cond_destroy(&m_condition);
-        ASSERT(st == NULL);
+        PthreadCondAttrHolder attrsHolder(&attrs);
+
+    #if HAVE_CLOCK_MONOTONIC
+        // Ensure that the pthread_cond_timedwait will use CLOCK_MONOTONIC
+        st = pthread_condattr_setclock(&attrs, CLOCK_MONOTONIC);
+        if (st != 0)
+        {
+            ASSERT_UNCONDITIONALLY("Failed to set UnixEvent condition variable wait clock");
+            return false;
+        }
+    #endif // HAVE_CLOCK_MONOTONIC
+
+        st = pthread_mutex_init(&m_mutex, NULL);
+        if (st != 0)
+        {
+            ASSERT_UNCONDITIONALLY("Failed to initialize UnixEvent mutex");
+            return false;
+        }
+
+        st = pthread_cond_init(&m_condition, &attrs);
+        if (st != 0)
+        {
+            ASSERT_UNCONDITIONALLY("Failed to initialize UnixEvent condition variable");
+
+            st = pthread_mutex_destroy(&m_mutex);
+            ASSERT_MSG(st == 0, "Failed to destroy UnixEvent mutex");
+            return false;
+        }
+
+        m_isValid = true;
+
+        return true;
+    }
+
+    bool Destroy()
+    {
+        bool success = true;
+
+        if (m_isValid)
+        {
+            int st = pthread_mutex_destroy(&m_mutex);
+            ASSERT_MSG(st == 0, "Failed to destroy UnixEvent mutex");
+            success = success && (st == 0);
+
+            st = pthread_cond_destroy(&m_condition);
+            ASSERT_MSG(st == 0, "Failed to destroy UnixEvent condition variable");
+            success = success && (st == 0);
+        }
+
+        return success;
     }
 
     uint32_t Wait(uint32_t milliseconds)
     {
         timespec endTime;
-
+#ifdef __APPLE__
+        uint64_t endMachTime;
+#endif
         if (milliseconds != INFINITE)
         {
 #if HAVE_CLOCK_MONOTONIC
             clock_gettime(CLOCK_MONOTONIC, &endTime);
             TimeSpecAdd(&endTime, milliseconds);
 #else // HAVE_CLOCK_MONOTONIC
-            // TODO: fix this. The time of day can be changed by the user and then the timeout
-            // would change. So we will need to use pthread_cond_timedwait_relative_np and
-            // update the relative time each time pthread_cond_timedwait gets waked.
-            // on OSX and other systems that don't support the monotonic clock
-            timeval now;
-            gettimeofday(&now, NULL);
-            endTime.tv_sec = now.tv_sec;
-            endTime.tv_nsec = now.tv_usec * tccMicroSecondsToNanoSeconds;
-            TimeSpecAdd(&endTime, milliseconds);
+
+#ifdef __APPLE__
+            uint64_t nanoseconds = (uint64_t)milliseconds * tccMilliSecondsToNanoSeconds;
+            NanosecondsToTimespec(nanoseconds, &endTime);
+            endMachTime =  mach_absolute_time() + nanoseconds * s_TimebaseInfo.denom / s_TimebaseInfo.numer;
+#else // __APPLE__
+#error Cannot perform reliable timed wait for pthread condition on this platform
+#endif // __APPLE__
+
 #endif // HAVE_CLOCK_MONOTONIC
         }
 
@@ -240,7 +325,32 @@ public:
             }
             else
             {
+#ifdef __APPLE__
+                // Since OSX doesn't support CLOCK_MONOTONIC, we use relative variant of the 
+                // timed wait and we need to handle spurious wakeups properly.
+                st = pthread_cond_timedwait_relative_np(&m_condition, &m_mutex, &endTime);
+                if ((st == 0) && !m_state)
+                {
+                    uint64_t machTime = mach_absolute_time();
+                    if (machTime < endMachTime)
+                    {
+                        // The wake up was spurious, recalculate the relative endTime
+                        uint64_t remainingNanoseconds = (endMachTime - machTime) * s_TimebaseInfo.numer / s_TimebaseInfo.denom;
+                        NanosecondsToTimespec(remainingNanoseconds, &endTime);
+                    }
+                    else
+                    {
+                        // Although the timed wait didn't report a timeout, time calculated from the
+                        // mach time shows we have already reached the end time. It can happen if
+                        // the wait was spuriously woken up right before the timeout.
+                        st = ETIMEDOUT;
+                    }
+                }
+#else // __APPLE__ 
                 st = pthread_cond_timedwait(&m_condition, &m_mutex, &endTime);
+#endif // __APPLE__
+                // Verify that if the wait timed out, the event was not set
+                ASSERT((st != ETIMEDOUT) || !m_state);
             }
 
             if (st != 0)
@@ -248,8 +358,14 @@ public:
                 // wait failed or timed out
                 break;
             }
-
         }
+
+        if ((st == 0) && !m_manualReset)
+        {
+            // Clear the state for auto-reset events so that only one waiter gets released
+            m_state = false;
+        }
+
         pthread_mutex_unlock(&m_mutex);
 
         uint32_t waitStatus;
@@ -272,16 +388,36 @@ public:
 
     void Set()
     {
-        Update(true);
+        pthread_mutex_lock(&m_mutex);
+        m_state = true;
+        pthread_mutex_unlock(&m_mutex);
+
+        // Unblock all threads waiting for the condition variable
+        pthread_cond_broadcast(&m_condition);
     }
 
     void Reset()
     {
-        Update(false);
+        pthread_mutex_lock(&m_mutex);
+        m_state = false;
+        pthread_mutex_unlock(&m_mutex);
     }
 };
 
-typedef UnixHandle<UnixHandleType::Event, UnixEvent> EventUnixHandle;
+class EventUnixHandle : public UnixHandle<UnixHandleType::Event, UnixEvent>
+{
+public:
+    EventUnixHandle(UnixEvent event)
+    : UnixHandle<UnixHandleType::Event, UnixEvent>(event)
+    {
+    }
+
+    virtual bool Destroy()
+    {
+        return m_object.Destroy();
+    }
+};
+
 typedef UnixHandle<UnixHandleType::Thread, pthread_t> ThreadUnixHandle;
 
 // Destructor of the thread local object represented by the g_threadKey,
@@ -328,12 +464,6 @@ REDHAWK_PALEXPORT bool REDHAWK_PALAPI PalInit()
 REDHAWK_PALEXPORT bool REDHAWK_PALAPI PalHasCapability(PalCapability capability)
 {
     return (g_dwPALCapabilities & (uint32_t)capability) == (uint32_t)capability;
-}
-
-extern "C" void RaiseFailFastException(PEXCEPTION_RECORD arg1, PCONTEXT arg2, UInt32 arg3)
-{
-    // Abort aborts the process and causes creation of a crash dump
-    abort();
 }
 
 // Attach thread to PAL. 
@@ -432,16 +562,36 @@ REDHAWK_PALEXPORT UInt32_BOOL REDHAWK_PALAPI __stdcall PalSwitchToThread()
 
 extern "C" UInt32_BOOL CloseHandle(HANDLE handle)
 {
+    if ((handle == NULL) || (handle == INVALID_HANDLE_VALUE))
+    {
+        return UInt32_FALSE;
+    }
+
     UnixHandleBase* handleBase = (UnixHandleBase*)handle;
+
+    bool success = handleBase->Destroy();
 
     delete handleBase;
 
-    return UInt32_TRUE;
+    return success ? UInt32_TRUE : UInt32_FALSE;
 }
 
 REDHAWK_PALEXPORT HANDLE REDHAWK_PALAPI PalCreateEventW(_In_opt_ LPSECURITY_ATTRIBUTES pEventAttributes, UInt32_BOOL manualReset, UInt32_BOOL initialState, _In_opt_z_ const wchar_t* pName)
 {
-    return new (nothrow) EventUnixHandle(UnixEvent(manualReset, initialState));
+    UnixEvent event = UnixEvent(manualReset, initialState);
+    if (!event.Initialize())
+    {
+        return INVALID_HANDLE_VALUE;
+    }
+
+    EventUnixHandle* handle = new (nothrow) EventUnixHandle(event);
+
+    if (handle == NULL)
+    {
+        return INVALID_HANDLE_VALUE;
+    }
+
+    return handle;
 }
 
 typedef UInt32(__stdcall *BackgroundCallback)(_In_opt_ void* pCallbackContext);
@@ -587,7 +737,7 @@ bool QueryCacheSize()
     bool success = true;
     g_cbLargestOnDieCache = 0;
 
-#ifdef __LINUX__
+#ifdef __linux__
     DIR* cpuDir = opendir("/sys/devices/system/cpu");
     if (cpuDir == nullptr)
     {
@@ -670,7 +820,7 @@ bool QueryCacheSize()
     }
 #else
 #error Don't know how to get cache size on this platform
-#endif // __LINUX__
+#endif // __linux__
 
     // TODO: implement adjusted cache size
     g_cbLargestOnDieCacheAdjusted = g_cbLargestOnDieCache;
@@ -803,9 +953,9 @@ REDHAWK_PALEXPORT _Ret_maybenull_ _Post_writable_byte_size_(size) void* REDHAWK_
 
 REDHAWK_PALEXPORT UInt32_BOOL REDHAWK_PALAPI PalVirtualFree(_In_ void* pAddress, size_t size, uint32_t freeType)
 {
-    assert(((freeType & MEM_RELEASE) != MEM_RELEASE) || size == 0);
-    assert((freeType & (MEM_RELEASE | MEM_DECOMMIT)) != (MEM_RELEASE | MEM_DECOMMIT));
-    assert(freeType != 0);
+    ASSERT(((freeType & MEM_RELEASE) != MEM_RELEASE) || size == 0);
+    ASSERT((freeType & (MEM_RELEASE | MEM_DECOMMIT)) != (MEM_RELEASE | MEM_DECOMMIT));
+    ASSERT(freeType != 0);
 
     // UNIXTODO: Implement this function
     return UInt32_TRUE;
@@ -1001,14 +1151,6 @@ extern "C" Int32 _stricmp(const char *string1, const char *string2)
     return strcasecmp(string1, string2);
 }
 
-// Given the OS handle of a loaded module, compute the upper and lower virtual address bounds (inclusive).
-REDHAWK_PALEXPORT void REDHAWK_PALAPI PalGetModuleBounds(HANDLE hOsHandle, _Out_ UInt8 ** ppLowerBound, _Out_ UInt8 ** ppUpperBound)
-{
-    // The module handle is equal to the module base address
-    *ppLowerBound = (UInt8*)hOsHandle;
-    PORTABILITY_ASSERT("UNIXTODO: Implement this function");
-}
-
 REDHAWK_PALEXPORT Int32 PalGetProcessCpuCount()
 {
     // The concept of process CPU affinity is going away and so CoreSystem obsoletes the APIs used to
@@ -1089,20 +1231,31 @@ REDHAWK_PALEXPORT bool PalGetMaximumStackBounds(_Out_ void** ppStackLowOut, _Out
     return true;
 }
 
+extern "C" int main(int argc, char** argv);
+
 // retrieves the full path to the specified module, if moduleBase is NULL retreieves the full path to the
 // executable module of the current process.
 //
 // Return value:  number of characters in name string
 //
-REDHAWK_PALEXPORT Int32 PalGetModuleFileName(_Out_ wchar_t** pModuleNameOut, HANDLE moduleBase)
+REDHAWK_PALEXPORT Int32 PalGetModuleFileName(_Out_ const TCHAR** pModuleNameOut, HANDLE moduleBase)
 {
-    // TODO: this function has a signature that expects the module name to be stored somewhere.
-    // We should change the signature to actually copy out the module name.
-    // Or get rid of this function (it is used by RHConfig to find the config file and the
-    // profiling to generate the .profile file name.
-    // UNIXTODO: Implement this function!
-    *pModuleNameOut = NULL;
-    return 0;
+    if (moduleBase == NULL)
+    {
+        // Get an address of the "main" function, which causes the dladdr to return
+        // path of the main executable
+        moduleBase = (HANDLE)&main;
+    }
+
+    Dl_info dl;
+    if (dladdr(moduleBase, &dl) == 0)
+    {
+        *pModuleNameOut = NULL;
+        return 0;
+    }
+
+    *pModuleNameOut = dl.dli_fname;
+    return strlen(dl.dli_fname);
 }
 
 void PalDebugBreak()
@@ -1216,10 +1369,22 @@ extern "C" UInt32_BOOL QueryPerformanceFrequency(LARGE_INTEGER *lpFrequency)
     return UInt32_TRUE;
 }
 
-extern "C" uint32_t GetCurrentThreadId()
+extern "C" UInt64 PalGetCurrentThreadIdForLogging()
 {
-    // UNIXTODO: Implement
-    return 1;
+#if defined(__linux__)
+    return (uint64_t)syscall(SYS_gettid);
+#elif defined(__APPLE__)
+    uint64_t tid;
+    pthread_threadid_np(pthread_self(), &tid);
+    return (uint64_t)tid;
+#elif HAVE_PTHREAD_GETTHREADID_NP
+    return (uint64_t)pthread_getthreadid_np();
+#elif HAVE_LWP_SELF
+    return (uint64_t)_lwp_self();
+#else
+    // Fallback in case we don't know how to get integer thread id on the current platform
+    return (uint64_t)pthread_self();
+#endif
 }
 
 extern "C" UInt32_BOOL WriteFile(
@@ -1267,9 +1432,9 @@ void GCToOSInterface::Shutdown()
 // current platform. It is indended for logging purposes only.
 // Return:
 //  Numeric id of the current thread or 0 if the 
-uint32_t GCToOSInterface::GetCurrentThreadIdForLogging()
+uint64_t GCToOSInterface::GetCurrentThreadIdForLogging()
 {
-    return ::GetCurrentThreadId();
+    return PalGetCurrentThreadIdForLogging();
 }
 
 // Get id of the process

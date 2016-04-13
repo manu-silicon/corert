@@ -101,10 +101,10 @@
     <OSPlatformConfig>$(BinDirOSGroup).$(BinDirPlatform).$(BinDirConfiguration)</OSPlatformConfig>
 
     <BaseOutputPath Condition="'$(BaseOutputPath)'==''">$(ProductBinDir)</BaseOutputPath>
-    <OutputPath Condition="'$(OutputPath)'==''">$(BaseOutputPath)$(OSPlatformConfig)\</OutputPath>
+    <OutputPath Condition="'$(OutputPath)'==''">$(BaseOutputPath)$(OSPlatformConfig)/$(MSBuildProjectName)/</OutputPath>
 
     <!-- Folder where we will drop the Nuget package for the toolchain -->
-    <ProductPackageDir Condition="'$(ProductPackageDir)'==''">$(OutputPath).nuget/</ProductPackageDir>
+    <ProductPackageDir Condition="'$(ProductPackageDir)'==''">$(BaseOutputPath)$(OSPlatformConfig)/packaging/</ProductPackageDir>
     
     <BaseIntermediateOutputPath Condition="'$(BaseIntermediateOutputPath)'==''">$(ObjDir)</BaseIntermediateOutputPath>
     <IntermediateOutputRootPath Condition="'$(IntermediateOutputRootPath)' == ''">$(BaseIntermediateOutputPath)$(OSPlatformConfig)\</IntermediateOutputRootPath>
@@ -141,6 +141,7 @@
   <ItemGroup>
     <!-- Need to escape double forward slash (%2F) or MSBuild will normalize to one slash on Unix. -->
     <DnuSourceList Include="https:%2F%2Fdotnet.myget.org/F/dotnet-core/" />
+    <DnuSourceList Include="https:%2F%2Fdotnet.myget.org/F/dotnet-corefxlab/" />
     <DnuSourceList Include="https:%2F%2Fdotnet.myget.org/F/dotnet-corefxtestdata/" />
     <DnuSourceList Include="https:%2F%2Fdotnet.myget.org/F/dotnet-buildtools/" />
     <DnuSourceList Include="https:%2F%2Fdotnet.myget.org/F/dotnet-corert/" />
@@ -153,16 +154,15 @@
   </ItemGroup>
 
   <PropertyGroup>
-    <DnuToolPath Condition="'$(DnuToolPath)'==''">$(BinDir)/tools/cli/bin/dotnet</DnuToolPath>
+    <DnuToolPath Condition="'$(DnuToolPath)'==''">$(BinDir)/tools/cli/dotnet</DnuToolPath>
 
     <DnuRestoreSource>@(DnuSourceList -> '--source %(Identity)', ' ')</DnuRestoreSource>
     <DnuRestoreDirs>@(DnuRestoreDir -> '%(Identity)', ' ')</DnuRestoreDirs>
 
     <DnuRestoreCommand>"$(DnuToolPath)"</DnuRestoreCommand>
     <DnuRestoreCommand>$(DnuRestoreCommand) restore</DnuRestoreCommand>
-    <!-- Disable parallel restore for now https://github.com/dotnet/corert/issues/838 -->
-    <!-- <DnuRestoreCommand Condition="'$(ParallelRestore)'=='true'">$(DnuRestoreCommand) - -parallel</DnuRestoreCommand> -->
-    <DnuRestoreCommand>$(DnuRestoreCommand) --disable-parallel</DnuRestoreCommand>
+    <!-- Parallel restore is not stable on Unix. Enable it on Windows only for now -->  
+    <DnuRestoreCommand Condition="'$(ParallelRestore)'=='true' and '$(OsEnvironment)'=='Windows_NT'">$(DnuRestoreCommand) --parallel</DnuRestoreCommand>  
     <DnuRestoreCommand>$(DnuRestoreCommand) --packages "$(PackagesDir.TrimEnd('/\'.ToCharArray()))" $(DnuRestoreSource)</DnuRestoreCommand>
     <DnuRestoreCommand Condition="'$(LockDependencies)' == 'true'">$(DnuRestoreCommand) --lock</DnuRestoreCommand>
   </PropertyGroup>
@@ -212,13 +212,13 @@
     <DebugSymbols Condition="'$(DebugSymbols)' == ''">true</DebugSymbols>
     <Optimize Condition="'$(Optimize)' == ''">false</Optimize>
     <DebugType Condition="'$(DebugType)' == ''">full</DebugType>
-    <DefineConstants>$(DefineConstants),DEBUG,TRACE</DefineConstants>
+    <DefineConstants>DEBUG;TRACE;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
   <PropertyGroup Condition="'$(ConfigurationGroup)' == 'Release'">
     <DebugSymbols Condition="'$(DebugSymbols)' == ''">true</DebugSymbols>
     <Optimize Condition="'$(Optimize)' == ''">true</Optimize>
     <DebugType Condition="'$(DebugType)' == ''">pdbonly</DebugType>
-    <DefineConstants>$(DefineConstants),TRACE</DefineConstants>
+    <DefineConstants>TRACE;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
 
   <!-- Disable some standard properties for building our projects -->
@@ -227,6 +227,7 @@
     <NoExplicitReferenceToStdLib>true</NoExplicitReferenceToStdLib>
     <AddAdditionalExplicitAssemblyReferences>false</AddAdditionalExplicitAssemblyReferences>
     <GenerateTargetFrameworkAttribute>false</GenerateTargetFrameworkAttribute>
+    <LangVersion>6</LangVersion>
   </PropertyGroup>
 
   <!-- Set up handling of build warnings -->
@@ -235,10 +236,6 @@
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
   </PropertyGroup>
 
-  <!-- Temporary until build/CI system is upgraded to C# 6: disable C# 6 features -->
-  <PropertyGroup Condition="'$(MSBuildProjectExtension)' == '.csproj' OR '$(Language)' == 'C#'">
-    <LangVersion>5</LangVersion>
-  </PropertyGroup>
 
   <!-- Set up some common paths -->
   <PropertyGroup>

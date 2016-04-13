@@ -45,6 +45,7 @@ if /i "%1" == "release"   (set __BuildType=Release&shift&goto Arg_Loop)
 if /i "%1" == "clean"   (set __CleanBuild=1&shift&goto Arg_Loop)
 
 if /i "%1" == "skiptests" (set __SkipTests=1&shift&goto Arg_Loop)
+if /i "%1" == "skipvsdev" (set __SkipVsDev=1&shift&goto Arg_Loop)
 if /i "%1" == "/milestone" (set __ToolchainMilestone=%2&shift&shift&goto Arg_Loop)
 if /i "%1" == "/dotnetclipath" (set __DotNetCliPath=%2&shift&shift&goto Arg_Loop)
 
@@ -58,8 +59,13 @@ echo.
 
 :: Set the remaining variables based upon the determined build configuration
 set "__BinDir=%__RootBinDir%\Product\%__BuildOS%.%__BuildArch%.%__BuildType%"
+set "__ObjDir=%__RootBinDir%\obj\%__BuildOS%.%__BuildArch%.%__BuildType%"
 set "__IntermediatesDir=%__RootBinDir%\obj\Native\%__BuildOS%.%__BuildArch%.%__BuildType%\"
 set "__RelativeProductBinDir=bin\Product\%__BuildOS%.%__BuildArch%.%__BuildType%"
+
+set "__ReproProjectDir=%__ProjectDir%\src\ILCompiler\repro"
+set "__ReproProjectBinDir=%__ReproProjectDir%\bin"
+set "__ReproProjectObjDir=%__ReproProjectDir%\obj"
 
 :: Generate path to be set for CMAKE_INSTALL_PREFIX to contain forward slash
 set "__CMakeBinDir=%__BinDir%"
@@ -75,12 +81,17 @@ set __MSBCleanBuildArgs=/t:rebuild /p:CleanedTheBuild=1
 
 :: Cleanup the previous output for the selected configuration
 if exist "%__BinDir%" rd /s /q "%__BinDir%"
+if exist "%__ObjDir%" rd /s /q "%__ObjDir%"
 if exist "%__IntermediatesDir%" rd /s /q "%__IntermediatesDir%"
+
+if exist "%__ReproProjectBinDir%" rd /s /q "%__ReproProjectBinDir%"
+if exist "%__ReproProjectObjDir%" rd /s /q "%__ReproProjectObjDir%"
 
 if exist "%__LogsDir%" del /f /q "%__LogsDir%\*_%__BuildOS%__%__BuildArch%__%__BuildType%.*"
 
 :MakeDirs
 if not exist "%__BinDir%" md "%__BinDir%"
+if not exist "%__ObjDir%" md "%__ObjDir%"
 if not exist "%__IntermediatesDir%" md "%__IntermediatesDir%"
 if not exist "%__LogsDir%" md "%__LogsDir%"
 
@@ -88,6 +99,15 @@ if not exist "%__LogsDir%" md "%__LogsDir%"
 :: Check prerequisites
 echo Checking pre-requisites...
 echo.
+
+:: Validate that PowerShell is accessibile.
+for %%X in (powershell.exe) do (set __PSDir=%%~$PATH:X)
+if defined __PSDir goto EvaluatePS
+echo PowerShell is a prerequisite to build this repository.
+echo See: https://github.com/dotnet/corert/blob/master/Documentation/prerequisites-for-building.md
+exit /b 1
+
+:EvaluatePS
 :: Eval the output from probe-win1.ps1
 for /f "delims=" %%a in ('powershell -NoProfile -ExecutionPolicy RemoteSigned "& ""%__SourceDir%\Native\probe-win.ps1"""') do %%a
 
@@ -178,11 +198,15 @@ if not exist "%__DotNetCliPath%" (
 )
 if not exist "%__DotNetCliPath%" (
     echo DotNet CLI could not be downloaded or installed.
+
+    rem The script calls Invoke-WebRequest which is only available in PowerShell 3.
+    echo If you are running Windows 7, make sure you have PowerShell version 3.
+
     exit /b 1
 )
 
-echo type "%__DotNetCliPath%\.version"
-type "%__DotNetCliPath%\.version"
+echo Using CLI tools version:
+dir /b "%__DotNetCliPath%\sdk"
 
 :: Set the environment for the managed build
 :SetupManagedBuild
@@ -200,6 +224,32 @@ exit /b 1
 
 
 :AfterILCompilerBuild
+
+:VsDevGenerateRespFiles
+if defined __SkipVsDev goto :AfterVsDevGenerateRespFiles
+set __GenRespFiles=0
+if not exist "%__ObjDir%\ryujit.rsp" set __GenRespFiles=1
+if not exist "%__ObjDir%\cpp.rsp" set __GenRespFiles=1
+if "%__GenRespFiles%"=="1" (
+    "%__DotNetCliPath%\dotnet.exe" restore --quiet --source "https://dotnet.myget.org/F/dotnet-core" "%__ReproProjectDir%"
+    call "!VS140COMNTOOLS!\..\..\VC\vcvarsall.bat" %__BuildArch%
+    "%__DotNetCliPath%\dotnet.exe" build --native --ilcpath "%__BinDir%\packaging\publish1" "%__ReproProjectDir%" -c %__BuildType%
+    call :CopyResponseFile "%__ReproProjectObjDir%\Debug\dnxcore50\native\dotnet-compile-native-ilc.rsp" "%__ObjDir%\ryujit.rsp"
+
+    rem Workaround for https://github.com/dotnet/cli/issues/1956
+    rmdir /s /q "%__ReproProjectBinDir%"
+    rmdir /s /q "%__ReproProjectObjDir%"
+
+    set __AdditionalCompilerFlags=
+    if /i "%__BuildType%"=="debug" (
+        set __AdditionalCompilerFlags=--cppcompilerflags /MTd
+    )
+    "%__DotNetCliPath%\dotnet.exe" build --native --cpp --ilcpath "%__BinDir%\packaging\publish1" "%__ReproProjectDir%" -c %__BuildType% !__AdditionalCompilerFlags!
+    call :CopyResponseFile "%__ReproProjectObjDir%\Debug\dnxcore50\native\dotnet-compile-native-ilc.rsp" "%__ObjDir%\cpp.rsp"
+)
+:AfterVsDevGenerateRespFiles
+
+:RunTests
 if defined __SkipTests exit /b 0
 
 pushd "%__ProjectDir%\tests"
@@ -224,3 +274,32 @@ echo Visual Studio version: ^(default: VS2015^).
 echo clean: force a clean build ^(default is to perform an incremental build^).
 echo skiptests: skip building tests ^(default: tests are built^).
 exit /b 1
+
+rem Copies the dotnet generated response file while patching up references
+rem to System.Private assemblies to the live built ones.
+rem This is to make sure that making changes in a private library doesn't require
+rem a full rebuild. It also helps with locating the symbols.
+:CopyResponseFile
+setlocal
+> %~2 (
+  for /f "tokens=*" %%l in (%~1) do (
+    set line=%%l
+    if "!line:publish1\sdk=!"=="!line!" (
+        echo !line!
+    ) ELSE (
+        set assemblyPath=!line:~3!
+        call :ExtractFileName !assemblyPath! assemblyFileName
+        echo -r:%__BinDir%\!assemblyFileName!\!assemblyFileName!.dll
+    )
+  )
+)
+endlocal
+goto:eof
+
+rem Extracts a file name from a full path
+rem %1 Full path to the file, %2 Variable to receive the file name
+:ExtractFileName
+setlocal
+for %%i in ("%1") DO set fileName=%%~ni
+endlocal & set "%2=%fileName%"
+goto:eof

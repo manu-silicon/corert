@@ -13,7 +13,7 @@ using GenericParameterKind = Internal.Metadata.NativeFormat.GenericParameterKind
 
 namespace ILCompiler.Metadata
 {
-    public partial class Transform<TPolicy>
+    partial class Transform<TPolicy>
     {
         private EntityMap<Cts.TypeDesc, ParameterTypeSignature> _paramSigs =
             new EntityMap<Cts.TypeDesc, ParameterTypeSignature>(EqualityComparer<Cts.TypeDesc>.Default);
@@ -41,14 +41,10 @@ namespace ILCompiler.Metadata
                 Number = checked((ushort)genParam.Index),
             };
 
-            List<MetadataRecord> typeConstraints = null;
             foreach (Cts.TypeDesc constraint in genParam.TypeConstraints)
             {
-                if (typeConstraints == null)
-                    typeConstraints = new List<MetadataRecord>();
-                typeConstraints.Add(HandleType(constraint));
+                result.Constraints.Add(HandleType(constraint));
             }
-            result.Constraints = typeConstraints;
 
             var ecmaGenParam = genParam as Cts.Ecma.EcmaGenericParameter;
             if (ecmaGenParam != null)
@@ -58,11 +54,15 @@ namespace ILCompiler.Metadata
 
                 result.Flags = genParamDef.Attributes;
                 result.Name = HandleString(reader.GetString(genParamDef.Name));
+
+                Ecma.CustomAttributeHandleCollection customAttributes = genParamDef.GetCustomAttributes();
+                if (customAttributes.Count > 0)
+                {
+                    result.CustomAttributes = HandleCustomAttributes(ecmaGenParam.Module, customAttributes);
+                }
             }
             else
                 throw new NotImplementedException();
-
-            // TODO: CustomAttributes
 
             return result;
         }

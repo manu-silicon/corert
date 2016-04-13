@@ -30,17 +30,13 @@ uint32_t PalEventWrite(REGHANDLE arg1, const EVENT_DESCRIPTOR * arg2, uint32_t a
 #include "gcenv.h"
 
 
-#ifdef CORERT // @TODO: Collisions between assert.h headers
-#define assert(expr) ASSERT(expr)
-#endif
-
 #define REDHAWK_PALEXPORT extern "C"
 #define REDHAWK_PALAPI __stdcall
 
-extern "C" UInt32 __stdcall NtGetCurrentProcessorNumber();
-
+#ifndef RUNTIME_SERVICES_ONLY
 // Index for the fiber local storage of the attached thread pointer
 static UInt32 g_flsIndex = FLS_OUT_OF_INDEXES;
+#endif
 
 static DWORD g_dwPALCapabilities;
 
@@ -60,6 +56,7 @@ bool InitializeSystemInfo()
 
 extern bool PalQueryProcessorTopology();
 
+#ifndef RUNTIME_SERVICES_ONLY
 // This is called when each *fiber* is destroyed. When the home fiber of a thread is destroyed,
 // it means that the thread itself is destroyed.
 // Since we receive that notification outside of the Loader Lock, it allows us to safely acquire
@@ -75,6 +72,7 @@ void __stdcall FiberDetachCallback(void* lpFlsData)
         RuntimeThreadShutdown(lpFlsData);
     }
 }
+#endif
 
 // The Redhawk PAL must be initialized before any of its exports can be called. Returns true for a successful
 // initialization and false on failure.
@@ -85,6 +83,7 @@ REDHAWK_PALEXPORT bool REDHAWK_PALAPI PalInit()
     if (!PalQueryProcessorTopology())
         return false;
 
+#ifndef RUNTIME_SERVICES_ONLY
     // We use fiber detach callbacks to run our thread shutdown code because the fiber detach
     // callback is made without the OS loader lock
     g_flsIndex = FlsAlloc(FiberDetachCallback);
@@ -92,6 +91,7 @@ REDHAWK_PALEXPORT bool REDHAWK_PALAPI PalInit()
     {
         return false;
     }
+#endif
 
     return true;
 }
@@ -102,6 +102,7 @@ REDHAWK_PALEXPORT bool REDHAWK_PALAPI PalHasCapability(PalCapability capability)
     return (g_dwPALCapabilities & (DWORD)capability) == (DWORD)capability;
 }
 
+#ifndef RUNTIME_SERVICES_ONLY
 // Attach thread to PAL. 
 // It can be called multiple times for the same thread.
 // It fails fast if a different thread was already registered with the current fiber
@@ -151,10 +152,11 @@ extern "C" bool PalDetachThread(void* thread)
     FlsSetValue(g_flsIndex, NULL);
     return true;
 }
+#endif // RUNTIME_SERVICES_ONLY
 
-REDHAWK_PALEXPORT unsigned int REDHAWK_PALAPI PalGetCurrentProcessorNumber()
+extern "C" UInt64 PalGetCurrentThreadIdForLogging()
 {
-    return GetCurrentProcessorNumber();
+    return GetCurrentThreadId();
 }
 
 #define SUPPRESS_WARNING_4127   \
@@ -184,7 +186,7 @@ REDHAWK_PALEXPORT unsigned int REDHAWK_PALAPI PalGetCurrentProcessorNumber()
     }                                                   \
     WHILE_0;
 
-extern "C" int __stdcall PalGetModuleFileName(_Out_ wchar_t** pModuleNameOut, HANDLE moduleBase);
+extern "C" int __stdcall PalGetModuleFileName(_Out_ const TCHAR** pModuleNameOut, HANDLE moduleBase);
 
 HRESULT STDMETHODCALLTYPE AllocateThunksFromTemplate(
     _In_ HANDLE hTemplateModule,
@@ -198,7 +200,7 @@ HRESULT STDMETHODCALLTYPE AllocateThunksFromTemplate(
     bool success = false;
     HANDLE hMap = NULL, hFile = INVALID_HANDLE_VALUE;
 
-    WCHAR * wszModuleFileName = NULL;
+    const WCHAR * wszModuleFileName = NULL;
     if (PalGetModuleFileName(&wszModuleFileName, hTemplateModule) == 0 || wszModuleFileName == NULL)
         return E_FAIL;
 
@@ -1286,6 +1288,20 @@ void PalDebugBreak()
     __debugbreak();
 }
 
+#ifdef RUNTIME_SERVICES_ONLY
+// Functions called by the GC to obtain our cached values for number of logical processors and cache size.
+REDHAWK_PALEXPORT UInt32 REDHAWK_PALAPI PalGetLogicalCpuCount()
+{
+    return g_cLogicalCpus;
+}
+
+REDHAWK_PALEXPORT size_t REDHAWK_PALAPI PalGetLargestOnDieCacheSize(UInt32_BOOL bTrueSize)
+{
+    return bTrueSize ? g_cbLargestOnDieCache
+        : g_cbLargestOnDieCacheAdjusted;
+}
+#endif // RUNTIME_SERVICES_ONLY
+
 REDHAWK_PALEXPORT _Ret_maybenull_ _Post_writable_byte_size_(size) void* REDHAWK_PALAPI PalVirtualAlloc(_In_opt_ void* pAddress, UIntNative size, UInt32 allocationType, UInt32 protect)
 {
     return VirtualAlloc(pAddress, size, allocationType, protect);
@@ -1309,9 +1325,8 @@ REDHAWK_PALEXPORT _Ret_maybenull_ void* REDHAWK_PALAPI PalSetWerDataBuffer(_In_ 
     return InterlockedExchangePointer(&pBuffer, pNewBuffer);
 }
 
-typedef uint32_t (WINAPI *GetCurrentProcessorNumber_t)(void);
+#ifndef RUNTIME_SERVICES_ONLY
 
-static GetCurrentProcessorNumber_t g_GetCurrentProcessorNumber = NULL;
 static LARGE_INTEGER performanceFrequency;
 
 // Initialize the interface implementation
@@ -1320,11 +1335,6 @@ bool GCToOSInterface::Initialize()
     if (!::QueryPerformanceFrequency(&performanceFrequency))
     {
         return false;
-    }
-
-    if (PalHasCapability(GetCurrentProcessorNumberCapability))
-    {
-        g_GetCurrentProcessorNumber = PalGetCurrentProcessorNumber;
     }
 
     return true;
@@ -1339,7 +1349,7 @@ void GCToOSInterface::Shutdown()
 // current platform. It is indended for logging purposes only.
 // Return:
 //  Numeric id of the current thread or 0 if the 
-uint32_t GCToOSInterface::GetCurrentThreadIdForLogging()
+uint64_t GCToOSInterface::GetCurrentThreadIdForLogging()
 {
     return ::GetCurrentThreadId();
 }
@@ -1373,7 +1383,7 @@ bool GCToOSInterface::SetCurrentThreadIdealAffinity(GCThreadAffinity* affinity)
     {
         if (GetThreadIdealProcessorEx(GetCurrentThread(), &proc))
         {
-            proc.Number = affinity->Processor;
+            proc.Number = (BYTE)affinity->Processor;
             success = !!SetThreadIdealProcessorEx(GetCurrentThread(), &proc, NULL);
         }        
     }
@@ -1385,13 +1395,13 @@ bool GCToOSInterface::SetCurrentThreadIdealAffinity(GCThreadAffinity* affinity)
 uint32_t GCToOSInterface::GetCurrentProcessorNumber()
 {
     _ASSERTE(GCToOSInterface::CanGetCurrentProcessorNumber());
-    return g_GetCurrentProcessorNumber();
+    return ::GetCurrentProcessorNumber();
 }
 
 // Check if the OS supports getting current processor number
 bool GCToOSInterface::CanGetCurrentProcessorNumber()
 {
-    return g_GetCurrentProcessorNumber != NULL;
+    return true;
 }
 
 // Flush write buffers of processors that are executing threads of the current process
@@ -1744,3 +1754,5 @@ void CLRCriticalSection::Leave()
 {
     LeaveCriticalSection(&m_cs);
 }
+
+#endif // RUNTIME_SERVICES_ONLY

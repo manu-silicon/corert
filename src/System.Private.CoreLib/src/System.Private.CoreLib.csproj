@@ -22,6 +22,9 @@
   <PropertyGroup Condition="'$(IsProjectNLibrary)' != 'true'">
     <DefineConstants>CORERT;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
+  <PropertyGroup Condition="'$(IsProjectNLibrary)' == 'true'">
+    <DefineConstants>ENABLE_REFLECTION_TRACE;$(DefineConstants)</DefineConstants>
+  </PropertyGroup>
   <PropertyGroup Condition="'$(TargetsUnix)'=='true'">
     <DefineConstants>PLATFORM_UNIX;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
@@ -38,9 +41,6 @@
     <DefineConstants>ARM64;BIT64;$(DefineConstants)</DefineConstants>
   </PropertyGroup>
   <ItemGroup>
-    <Compile Include="..\..\Common\src\Internal\NativeFormat\NativeFormatReader.cs">
-      <Link>Internal\Runtime\CompilerHelpers\StartupCode\NativeFormatReader.cs</Link>
-    </Compile>
     <Compile Include="..\..\Common\src\System\SR.Core.cs">
       <Link>Resources\Common</Link>
     </Compile>
@@ -50,6 +50,12 @@
     <Compile Include="Internal\Diagnostics\StackTraceHelper.cs" />
   </ItemGroup>
   <ItemGroup Condition="'$(IsProjectNLibrary)' != 'true'">
+    <Compile Include="..\..\Common\src\Internal\NativeFormat\NativeFormatReader.cs">
+      <Link>Common\src\Internal\NativeFormat\NativeFormatReader.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Common\src\Internal\Runtime\ModuleHeaders.cs" >
+      <Link>Internal\Runtime\ModuleHeaders.cs</Link>
+    </Compile>
     <Compile Include="Internal\Runtime\CompilerHelpers\StartupCode\LowLevelUTF8Encoding.cs" />
     <Compile Include="Internal\Runtime\CompilerHelpers\StartupCode\StartupCodeHelpers.cs" />
     <Compile Include="Internal\Runtime\CompilerHelpers\InteropHelpers.cs" />
@@ -78,6 +84,8 @@
   <ItemGroup Condition="'$(IsProjectNLibrary)' == 'true'">
     <Compile Include="Internal\Runtime\Augments\ReflectionTraceCallbacks.cs" />
     <Compile Include="Internal\Runtime\Augments\ReflectionTraceConnector.cs" />
+  </ItemGroup>
+  <ItemGroup>
     <Compile Include="Internal\Reflection\Core\NonPortable\BlockedRuntimeTypeNameGenerator.cs" />
     <Compile Include="Internal\Reflection\Core\NonPortable\ConstructedGenericTypeKey.cs" />
     <Compile Include="Internal\Reflection\Core\NonPortable\RawRuntimeTypeHandleKey.cs" />
@@ -101,14 +109,19 @@
     <Compile Include="Internal\Reflection\Core\NonPortable\ReflectionCoreNonPortable.cs" />
     <Compile Include="Internal\Reflection\MetadataTransformedAttribute.cs" />
     <Compile Include="Internal\Reflection\ExplicitScopeAttribute.cs" />
+  </ItemGroup>
+  <ItemGroup Condition="'$(IsProjectNLibrary)' == 'true'">
     <Compile Include="Internal\Reflection\Tracing\ReflectionTrace.Public.cs" />
     <Compile Include="Internal\Reflection\Tracing\ReflectionTrace.Public.Events.cs" />
     <Compile Include="Internal\Reflection\Tracing\ReflectionTrace.Internal.cs" />
   </ItemGroup>
-  <ItemGroup Condition="'$(IsProjectNLibrary)' != 'true'">
+  <!--ItemGroup Condition="'$(IsProjectNLibrary)' != 'true'">
+    <Compile Include="..\..\Common\src\TypeSystem\Common\Utilities\LockFreeReaderHashtable.cs" >
+      <Link>TypeSystem\Common\Utilities\LockFreeReaderHashtable.cs</Link>
+    </Compile>
     <Compile Include="Internal\Reflection\CoreRT\RuntimeType.cs" />
     <Compile Include="Internal\Reflection\CoreRT\ReflectionCoreNonPortable.cs" />
-  </ItemGroup>
+  </ItemGroup-->
 
   <ItemGroup>
     <Compile Include="Internal\Reflection\Extensibility\ExtensibleType.cs" />
@@ -175,10 +188,10 @@
     <Compile Include="System\Globalization\HebrewCalendar.cs" />
     <Compile Include="System\Globalization\HebrewNumber.cs" />
     <Compile Include="System\Globalization\HijriCalendar.cs" />
-    <Compile Include="System\Globalization\HijriCalendar.Win32.cs" />
+    <Compile Include="System\Globalization\HijriCalendar.Windows.cs" />
     <Compile Include="System\Globalization\InternalGlobalizationHelper.cs" />
     <Compile Include="System\Globalization\JapaneseCalendar.cs" />
-    <Compile Include="System\Globalization\JapaneseCalendar.Win32.cs" />
+    <Compile Include="System\Globalization\JapaneseCalendar.Windows.cs" />
     <Compile Include="System\Globalization\KoreanCalendar.cs" />
     <Compile Include="System\Globalization\RegionInfo.cs" />
     <Compile Include="System\Globalization\FormatProvider.CultureAwareComparer.cs" />
@@ -462,13 +475,13 @@
   </ItemGroup>
   <!-- Windows is default build -->
   <ItemGroup Condition="'$(TargetsWindows)'=='true'">
-      <Compile Include="System\Globalization\CultureInfo.Win32.cs" />
-      <Compile Include="System\Globalization\CompareInfo.Win32.cs" />
-      <Compile Include="System\Globalization\CultureData.Win32.cs" />
-      <Compile Include="System\Globalization\TextInfo.Win32.cs" />
-      <Compile Include="System\Globalization\CalendarData.Win32.cs" />
-      <Compile Include="System\DateTime.Win32.cs" />
-      <Compile Include="System\Globalization\FormatProvider.FormatAndParse.Win32.cs" />
+      <Compile Include="System\Globalization\CultureInfo.Windows.cs" />
+      <Compile Include="System\Globalization\CompareInfo.Windows.cs" />
+      <Compile Include="System\Globalization\CultureData.Windows.cs" />
+      <Compile Include="System\Globalization\TextInfo.Windows.cs" />
+      <Compile Include="System\Globalization\CalendarData.Windows.cs" />
+      <Compile Include="System\DateTime.Windows.cs" />
+      <Compile Include="System\Globalization\FormatProvider.FormatAndParse.Windows.cs" />
       <Compile Include="..\..\Common\src\Interop\Windows\Interop.BOOL.cs">
         <Link>Interop\Windows\Interop.BOOL.cs</Link>
       </Compile>
@@ -484,11 +497,16 @@
         <Link>Interop\Windows\mincore\Interop.MemAllocFree.cs</Link>
       </Compile>
 
-      <Compile Condition="'$(IsProjectNLibrary)' == 'true'" Include="System\Runtime\CommandLine.Win32.cs" />
+      <Compile Condition="'$(IsProjectNLibrary)' == 'true'" Include="System\Runtime\CommandLine.Windows.cs" />
       <Compile Condition="'$(IsProjectNLibrary)' == 'true'" Include="..\..\Common\src\Interop\Windows\mincore\Interop.CommandLine.cs" >
         <Link>Interop\Windows\mincore\Interop.CommandLine.cs</Link>
+      </Compile>      
+
+      <Compile Include="System\Environment.Windows.cs" />
+      <Compile Include="..\..\Common\src\Interop\Windows\mincore\Interop.GetTickCount64.cs" >
+        <Link>Interop\Windows\mincore\Interop.GetTickCount64.cs</Link>
       </Compile>
-      
+
       <Compile Condition="'$(IsProjectNLibrary)' == 'true'" Include="System\Environment.UWP.cs" />
 
       <Compile Condition="'$(IsProjectNLibrary)' != 'true'" Include="System\Environment.Win32.cs" />
@@ -526,7 +544,7 @@
       <Compile Include="..\..\Common\src\Interop\Windows\mincore\Interop.CoCreateGuid.cs" >
           <Link>Interop\Windows\mincore\Interop.CoCreateGuid.cs</Link>
       </Compile>
-</ItemGroup>
+  </ItemGroup>
   <ItemGroup Condition="'$(TargetsUnix)'=='true'">
     <Compile Include="System\Globalization\CultureInfo.Dummy.cs" />
     <Compile Include="System\Globalization\CompareInfo.Dummy.cs" />
@@ -541,6 +559,9 @@
     </Compile>
     <Compile Include="..\..\Common\src\Interop\Unix\System.Private.CoreLib.Native\Interop.MemAllocFree.cs" >
       <Link>Interop\Unix\System.Private.CoreLib.Native\Interop.MemAllocFree.cs</Link>
+    </Compile>
+    <Compile Include="..\..\Common\src\Interop\Unix\System.Private.CoreLib.Native\Interop.GetTickCount64.cs" >
+      <Link>Interop\Unix\System.Private.CoreLib.Native\Interop.GetTickCount64.cs</Link>
     </Compile>
     <Compile Include="..\..\Common\src\Interop\Unix\System.Private.CoreLib.Native\Interop.Environment.cs" >
       <Link>Interop\Unix\System.Private.CoreLib.Native\Interop.Environment.cs</Link>
@@ -604,10 +625,7 @@
     <Compile Include="..\..\Common\src\System\__HResults.cs" >
       <Link>System\__HResults.cs</Link>
     </Compile>
-    <Compile Include="..\..\Common\src\TypeSystem\Common\Utilities\LockFreeReaderHashtable.cs" >
-      <Link>TypeSystem\Common\Utilities\LockFreeReaderHashtable.cs</Link>
-    </Compile>
-    <Compile Include="CoverageSupport.cs" />
+    <Compile Condition="'$(IsProjectNLibrary)' == 'true'" Include="CoverageSupport.cs" />
   </ItemGroup>
   <!-- For now, link Runtime.Base into System.Private.CoreLib for CoreRT until there is proper multifile build -->
   <PropertyGroup Condition="'$(IsProjectNLibrary)' != 'true' and '$(RazzleToolPath)' == ''">

@@ -49,6 +49,9 @@ namespace System.Runtime.InteropServices
         internal static volatile int s_moduleCount;
 
         internal static int s_numInteropThunksAllocatedSinceLastCleanup = 0;
+
+        private static System.Collections.Generic.Internal.Dictionary<RuntimeTypeHandle, McgTypeInfo> s_runtimeTypeHandleToMcgTypeInfoMap;
+
 #if !CORECLR
         private static class AsmCode
         {
@@ -72,6 +75,10 @@ namespace System.Runtime.InteropServices
             CCWLookupMap.InitializeStatics();
             ContextEntry.ContextEntryManager.InitializeStatics();
             ComObjectCache.InitializeStatics();
+
+            const int DefaultSize = 101; // small prime number to avoid resizing in start up code
+            s_runtimeTypeHandleToMcgTypeInfoMap = new Collections.Generic.Internal.Dictionary<RuntimeTypeHandle, McgTypeInfo>(DefaultSize, new RuntimeTypeHandleComparer(), /* sync = */ true);
+
         }
 
 
@@ -89,7 +96,11 @@ namespace System.Runtime.InteropServices
         {
             get
             {
+#if ENABLE_WINRT
                 return new McgTypeInfo((int)InternalModule.Indexes.IInspectable, s_internalModule);
+#else
+                throw new PlatformNotSupportedException();
+#endif
             }
         }
 
@@ -129,9 +140,6 @@ namespace System.Runtime.InteropServices
             }
         }
 
-#if ENABLE_WINRT
-
-
         internal static McgTypeInfo ICCW
         {
             get
@@ -140,6 +148,7 @@ namespace System.Runtime.InteropServices
             }
         }
 
+#if ENABLE_WINRT
         internal static McgTypeInfo IRestrictedErrorInfo
         {
             get
@@ -157,9 +166,6 @@ namespace System.Runtime.InteropServices
             }
         }
 
-
-
-
 #endif //ENABLE_WINRT
         public unsafe static bool IsIJupiterObject(McgTypeInfo pEntry)
         {
@@ -170,19 +176,28 @@ namespace System.Runtime.InteropServices
 #endif
         }
 
+
         internal static McgTypeInfo IWeakReferenceSource
         {
             get
             {
+#if ENABLE_WINRT
                 return new McgTypeInfo((int)InternalModule.Indexes.IWeakReferenceSource, s_internalModule);
-            }
-        }
+#else
+                throw new PlatformNotSupportedException();
+#endif
+    }
+}
 
         internal static McgTypeInfo IWeakReference
         {
             get
             {
+#if ENABLE_WINRT
                 return new McgTypeInfo((int)InternalModule.Indexes.IWeakReference, s_internalModule);
+#else
+                throw new PlatformNotSupportedException();
+#endif
             }
         }
 
@@ -193,8 +208,6 @@ namespace System.Runtime.InteropServices
                 return new McgTypeInfo((int)InternalModule.Indexes.IMarshal, s_internalModule);
             }
         }
-
-
 
         /// <summary>
         /// Register the module and add it into global module list
@@ -463,8 +476,93 @@ namespace System.Runtime.InteropServices
             return firstTypeInfoLocal;
         }
 
+        /// <summary>
+        /// Comparer for RuntimeTypeHandle
+        /// This custom comparer is required because RuntimeTypeHandle is different between ProjectN(IntPtr) 
+        /// and in CoreCLR. The default Equals and GetHashCode functions on RuntimeTypeHandle "do new EETypePtr" which 
+        /// adds additional cost to the dictionary lookup. In ProjectN we can get away with only checking the IntPtr
+        /// which is significantly less expensive.
+        /// </summary>
+        internal class RuntimeTypeHandleComparer : IEqualityComparer<RuntimeTypeHandle>
+        {
+            //
+            // Calculates Hash code when RuntimeTypeHandle is an IntPtr(ProjectN)
+            //
+            private unsafe int GetHashCodeHelper(ref RuntimeTypeHandle handle)
+            {
+                IntPtr val;
+                fixed (RuntimeTypeHandle* pHandle = &handle)
+                {
+                    val = *(IntPtr*)pHandle;
+                }
+                return unchecked((int)(val.ToInt64()));
+            }
+
+            //
+            // Determines whether two types are equal when RuntimeTypeHandle is an IntPtr(ProjectN)
+            //
+            private unsafe bool EqualsHelper(ref RuntimeTypeHandle handle1, ref RuntimeTypeHandle handle2)
+            {
+                IntPtr val1, val2;
+                fixed (RuntimeTypeHandle* pHandle1 = &handle1, pHandle2 = &handle2)
+                {
+                    val1 = *(IntPtr*)pHandle1;
+                    val2 = *(IntPtr*)pHandle2;
+                }
+                return val1.Equals(val2);
+            }
+
+            bool IEqualityComparer<RuntimeTypeHandle>.Equals(RuntimeTypeHandle handle1, RuntimeTypeHandle handle2)
+            {
+//
+// Ideally, here we should use a symbol that identifies we are in ProjctN as in ProjectN RuntimeTypeHandle
+// is an IntPtr. Since we don't have such symbol yet,  I am using ENABLE_WINRT which is synonymous to
+// ProjectN for now. It may change in the future with CoreRT, in that case we may need to revisit this.
+//
+#if ENABLE_WINRT
+                return EqualsHelper(ref handle1 , ref handle2);
+#else
+                return handle1.Equals(handle2);
+#endif
+            }
+
+            int IEqualityComparer<RuntimeTypeHandle>.GetHashCode(RuntimeTypeHandle obj)
+            {
+//
+//  See the comment for Equals
+//
+#if ENABLE_WINRT
+                return GetHashCodeHelper(ref obj);
+#else
+                return obj.GetHashCode();
+#endif
+            }
+        }
+
         [MethodImplAttribute(MethodImplOptions.NoInlining)]
         public static McgTypeInfo GetTypeInfoByHandle(RuntimeTypeHandle typeHnd)
+        {
+            McgTypeInfo typeInfo;
+
+            try
+            {
+                s_runtimeTypeHandleToMcgTypeInfoMap.LockAcquire();
+                if (!s_runtimeTypeHandleToMcgTypeInfoMap.TryGetValue(typeHnd, out typeInfo))
+                {
+                    typeInfo = GetTypeInfoByHandleInternal(typeHnd);
+                    s_runtimeTypeHandleToMcgTypeInfoMap.Add(typeHnd, typeInfo);
+                }
+            }
+            finally
+            {
+                s_runtimeTypeHandleToMcgTypeInfoMap.LockRelease();
+            }
+
+            return typeInfo;
+        }
+
+
+        private static McgTypeInfo GetTypeInfoByHandleInternal(RuntimeTypeHandle typeHnd)
         {
             McgTypeInfo typeInfo;
             for (int i = 0; i < s_moduleCount; ++i)
@@ -634,43 +732,23 @@ namespace System.Runtime.InteropServices
                 typeHnd);
         }
 
-        /// <summary>
-        /// Shared CCW marshalling to native: from type index to object, supporting HSTRING
-        /// </summary>
-        [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        static internal IntPtr ObjectToComInterface(object data, McgTypeInfo typeInfo)
-        {
-#if ENABLE_WINRT
-            if (typeInfo.Equals(McgModuleManager.IInspectable))
-            {
-                return McgMarshal.ObjectToIInspectable(data);
-            }
-            else if (typeInfo.Equals(McgModuleManager.HSTRING))
-            {
-                return McgMarshal.StringToHString((string)data).handle;
-            }
-#endif
-
-            return McgMarshal.ObjectToComInterface(data, typeInfo);
-        }
-
         [MethodImpl(MethodImplOptions.NoInlining)]
         public static IntPtr ObjectToComInterface(
                     object obj,
                     RuntimeTypeHandle typeHnd)
         {
-#if  ENABLE_WINRT
+#if ENABLE_WINRT
             if (typeHnd.Equals(typeof(object).TypeHandle))
             {
                 return McgMarshal.ObjectToIInspectable(obj);
             }
 
-            if (typeHnd.Equals(typeof(string).TypeHandle))
+            if (typeHnd.Equals(typeof(System.String).TypeHandle))
             {
                 return McgMarshal.StringToHString((string)obj).handle;
             }
 
-            if (!InteropExtensions.IsInterface(typeHnd))
+            if (typeHnd.IsClass())
             {
                 Debug.Assert(obj == null || obj is __ComObject);
                 ///
@@ -701,25 +779,9 @@ namespace System.Runtime.InteropServices
 
         public static object ComInterfaceToObject(System.IntPtr pComItf, RuntimeTypeHandle typeHandle)
         {
-#if ENABLE_WINRT
-            if (typeHandle.Equals(typeof(object).TypeHandle))
-            {
-                return McgMarshal.IInspectableToObject(pComItf);
-            }
-
-            if (typeHandle.Equals(typeof(string).TypeHandle))
-            {
-                return McgMarshal.HStringToString(pComItf);
-            }
-
-            if (!InteropExtensions.IsInterface(typeHandle))
-            {
-                return ComInterfaceToObject(pComItf, GetClassInfoFromTypeHandle(typeHandle).DefaultInterface, typeHandle);
-            }
-#endif
             return ComInterfaceToObject(pComItf, typeHandle, default(RuntimeTypeHandle));
-            
         }
+
         /// <summary>
         /// Shared CCW Interface To Object
         /// </summary>
@@ -730,44 +792,30 @@ namespace System.Runtime.InteropServices
         public static object ComInterfaceToObject(System.IntPtr pComItf, RuntimeTypeHandle interfaceType,
                                            RuntimeTypeHandle classTypeInSignature)
         {
+#if ENABLE_WINRT
             if (interfaceType.Equals(typeof(object).TypeHandle))
             {
                 return McgMarshal.IInspectableToObject(pComItf);
             }
 
-#if ENABLE_WINRT
-            if (interfaceType.Equals(typeof(string).TypeHandle))
+            if (interfaceType.Equals(typeof(System.String).TypeHandle))
             {
                 return McgMarshal.HStringToString(pComItf);
             }
-#endif
 
-            return ComInterfaceToObject(
+            if (interfaceType.IsClass())
+            {
+                McgClassInfo classInfo = GetClassInfoFromTypeHandle(interfaceType);
+                Debug.Assert(!classInfo.IsNull);
+                return ComInterfaceToObject(pComItf, classInfo.DefaultInterface, interfaceType);
+            }
+#endif
+            return McgMarshal.ComInterfaceToObject(
                 pComItf,
                 GetTypeInfoByHandle(interfaceType),
                 (classTypeInSignature.Equals(default(RuntimeTypeHandle)))
                     ? McgClassInfo.Null
                     : GetClassInfoFromTypeHandle(classTypeInSignature)
-            );
-        }
-
-        public static object ComInterfaceToObject(System.IntPtr pComItf, McgTypeInfo interfaceTypeInfo)
-        {
-            return ComInterfaceToObject(pComItf, interfaceTypeInfo,  McgClassInfo.Null);
-        }
-
-        public static object ComInterfaceToObject(System.IntPtr pComItf, McgTypeInfo interfaceTypeInfo, McgClassInfo classInfoInSignature)
-        {
-#if ENABLE_WINRT
-            if (interfaceTypeInfo == McgModuleManager.HSTRING)
-            {
-                return McgMarshal.HStringToString(pComItf);
-            }
-#endif
-            return McgMarshal.ComInterfaceToObject(
-                pComItf,
-                interfaceTypeInfo,
-                classInfoInSignature
             );
         }
 
@@ -910,17 +958,7 @@ namespace System.Runtime.InteropServices
         {
             for (uint i = 0; i < len; i++)
             {
-                dst[i] = McgMarshal.ObjectToComInterface(src[i], McgModuleManager.GetTypeInfoByHandle(typeHnd));
-            }
-        }
-
-        [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        unsafe public static void ObjectArrayToComInterfaceArray(uint len, System.IntPtr* dst, object[] src, McgTypeInfo specialTypeInfo)
-        {
-            Debug.Assert(!specialTypeInfo.IsNull); // this overload of the API is only for our 'special' indexes.
-            for (uint i = 0; i < len; i++)
-            {
-                dst[i] = McgModuleManager.ObjectToComInterface(src[i], specialTypeInfo);
+                dst[i] = McgModuleManager.ObjectToComInterface(src[i], typeHnd);
             }
         }
 
@@ -936,42 +974,13 @@ namespace System.Runtime.InteropServices
 
             if (src != null)
             {
-#if ENABLE_WINRT
-                // @TODO: this seems somewhat inefficient, should this be fixed by having the generated code
-                // call the right overload directly?
-                if (typeHnd.Equals(typeof(object).TypeHandle))
-                    return ObjectArrayToComInterfaceArrayAlloc(src, McgModuleManager.IInspectable, out len);
-#endif
                 len = (uint)src.Length;
 
                 dst = (System.IntPtr*)ExternalInterop.CoTaskMemAlloc((System.IntPtr)(len * (sizeof(System.IntPtr))));
 
                 for (uint i = 0; i < len; i++)
                 {
-                    dst[i] = McgMarshal.ObjectToComInterface(src[i], McgModuleManager.GetTypeInfoByHandle(typeHnd));
-                }
-            }
-
-            return dst;
-        }
-
-        [MethodImplAttribute(MethodImplOptions.NoInlining)]
-        unsafe public static System.IntPtr* ObjectArrayToComInterfaceArrayAlloc(object[] src, McgTypeInfo specialTypeInfo, out uint len)
-        {
-            Debug.Assert(!specialTypeInfo.IsNull); // this overload of the API is only for our 'special' indexes.
-            System.IntPtr* dst = null;
-
-            len = 0;
-
-            if (src != null)
-            {
-                len = (uint)src.Length;
-
-                dst = (System.IntPtr*)ExternalInterop.CoTaskMemAlloc((System.IntPtr)(len * (sizeof(System.IntPtr))));
-
-                for (uint i = 0; i < len; i++)
-                {
-                    dst[i] = McgModuleManager.ObjectToComInterface(src[i], specialTypeInfo);
+                    dst[i] = McgModuleManager.ObjectToComInterface(src[i], typeHnd);
                 }
             }
 

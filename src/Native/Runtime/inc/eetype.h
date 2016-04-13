@@ -12,7 +12,7 @@
 class MdilModule;
 class EEType;
 class OptionalFields;
-
+class ModuleManager;
 
 
 //-------------------------------------------------------------------------------------------------
@@ -214,6 +214,9 @@ private:
     UInt16              m_usNumVtableSlots;
     UInt16              m_usNumInterfaces;
     UInt32              m_uHashCode;
+#if defined(CORERT)
+    ModuleManager**     m_ppModuleManager;
+#endif
 
     TgtPTR_Void         m_VTable[];  // make this explicit so the binder gets the right alignment
 
@@ -440,6 +443,11 @@ public:
 
     bool IsGeneric()
         { return (m_usFlags & IsGenericFlag) != 0; }
+
+#if defined(CORERT)
+    ModuleManager* GetModuleManager()
+         { return *m_ppModuleManager; }
+#endif
 
 #ifndef BINDER
     DispatchMap *GetDispatchMap();

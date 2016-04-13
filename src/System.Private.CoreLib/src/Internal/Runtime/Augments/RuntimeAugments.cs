@@ -227,7 +227,7 @@ namespace Internal.Runtime.Augments
 
         public static RuntimeTypeHandle CreateRuntimeTypeHandle(IntPtr ldTokenResult)
         {
-#if CORERT // CORERT-TODO: RuntimeTypeHandle
+#if CLR_RUNTIMETYPEHANDLE // CORERT-TODO: RuntimeTypeHandle
             throw new NotImplementedException();
 #else
             return new RuntimeTypeHandle(new EETypePtr(ldTokenResult));
@@ -300,15 +300,18 @@ namespace Internal.Runtime.Augments
             }
         }
 
+        [DebuggerGuidedStepThroughAttribute]
         public static object CallDynamicInvokeMethod(object thisPtr, IntPtr methodToCall, object thisPtrDynamicInvokeMethod, IntPtr dynamicInvokeHelperMethod, IntPtr dynamicInvokeHelperGenericDictionary, string defaultValueString, object[] parameters, bool invokeMethodHelperIsThisCall, bool methodToCallIsThisCall)
         {
-            return InvokeUtils.CallDynamicInvokeMethod(thisPtr, methodToCall, thisPtrDynamicInvokeMethod, dynamicInvokeHelperMethod, dynamicInvokeHelperGenericDictionary, defaultValueString, parameters, invokeMethodHelperIsThisCall, methodToCallIsThisCall);
+            object result = InvokeUtils.CallDynamicInvokeMethod(thisPtr, methodToCall, thisPtrDynamicInvokeMethod, dynamicInvokeHelperMethod, dynamicInvokeHelperGenericDictionary, defaultValueString, parameters, invokeMethodHelperIsThisCall, methodToCallIsThisCall);
+            System.Diagnostics.DebugAnnotations.PreviousCallContainsDebuggerStepInCode();
+            return result;
         }
 
         public unsafe static void EnsureClassConstructorRun(IntPtr staticClassConstructionContext)
         {
             StaticClassConstructionContext* context = (StaticClassConstructionContext*)staticClassConstructionContext;
-            ClassConstructorRunner.EnsureClassConstructorRun(null, context);
+            ClassConstructorRunner.EnsureClassConstructorRun(context);
         }
 
         public static bool GetMdArrayRankTypeHandleIfSupported(int rank, out RuntimeTypeHandle mdArrayTypeHandle)
@@ -675,9 +678,15 @@ namespace Internal.Runtime.Augments
         /// <param name="moduleBase">Module base address</param>
         public static unsafe String TryGetFullPathToApplicationModule(IntPtr moduleBase)
         {
+#if PLATFORM_UNIX
+            byte* pModuleNameUtf8;
+            int numUtf8Chars = RuntimeImports.RhGetModuleFileName(moduleBase, out pModuleNameUtf8);
+            String modulePath = System.Text.Encoding.UTF8.GetString(pModuleNameUtf8, numUtf8Chars);
+#else // PLATFORM_UNIX
             char* pModuleName;
             int numChars = RuntimeImports.RhGetModuleFileName(moduleBase, out pModuleName);
             String modulePath = new String(pModuleName, 0, numChars);
+#endif // PLATFORM_UNIX
             return modulePath;
         }
 
@@ -838,7 +847,7 @@ namespace Internal.Runtime.Augments
             }
         }
 
-        [System.Diagnostics.DebuggerStepThrough]
+        [DebuggerStepThrough]
         /* TEMP workaround due to bug 149078 */
         [MethodImpl(MethodImplOptions.NoInlining)]
         public static void CallDescrWorker(IntPtr callDescr)

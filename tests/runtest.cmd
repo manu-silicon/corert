@@ -24,7 +24,7 @@ if /i "%1" == "/buildextrepo" (set CoreRT_BuildExtRepo=%2&shift&shift&goto ArgLo
 if /i "%1" == "/mode" (set CoreRT_TestCompileMode=%2&shift&shift&goto ArgLoop)
 if /i "%1" == "/runtest" (set CoreRT_TestRun=%2&shift&shift&goto ArgLoop)
 if /i "%1" == "/nocache" (set CoreRT_NuGetOptions=-nocache&shift&goto ArgLoop)
-if /i "%1" == "/dotnetclipath" (set CoreRT_CliDir=%2\bin&shift&shift&goto ArgLoop)
+if /i "%1" == "/dotnetclipath" (set CoreRT_CliDir=%2&shift&shift&goto ArgLoop)
 
 echo Invalid command line argument: %1
 goto :Usage
@@ -71,7 +71,7 @@ for /f "delims=" %%a in ('dir /s /aD /b src\*') do (
     set __SourceFileName=%%~na
     set __RelativePath=!__SourceFolder:%CoreRT_TestRoot%=!
     if exist "!__SourceFolder!\project.json" (
-        %CoreRT_CliDir%\dotnet restore --quiet !__SourceFolder!
+        %CoreRT_CliDir%\dotnet restore --quiet --source "https://dotnet.myget.org/F/dotnet-core" "!__SourceFolder!"
 
         set __Mode=Jit
         call :CompileFile !__SourceFolder! !__SourceFileName! %__LogDir%\!__RelativePath!
@@ -144,7 +144,7 @@ goto :eof
     )
     REM TODO: Add AppDepSDK argument after CLI build picks up: PR dotnet/cli #336
     call "!VS140COMNTOOLS!\..\..\VC\vcvarsall.bat" %CoreRT_BuildArch%
-    "%CoreRT_CliDir%\dotnet" compile --native --ilcpath "%CoreRT_ToolchainDir%" !__ExtraCompileArgs! !__SourceFolder! -c %CoreRT_BuildType% %additionalCompilerFlags%
+    "%CoreRT_CliDir%\dotnet" build --native --runtime "win7-x64" --ilcpath "%CoreRT_ToolchainDir%" !__ExtraCompileArgs! !__SourceFolder! -c %CoreRT_BuildType% %additionalCompilerFlags%
     endlocal
 
     set __SavedErrorLevel=%ErrorLevel%
@@ -153,7 +153,7 @@ goto :eof
     if "%__SavedErrorLevel%"=="0" (
         echo.
         echo Running test !__SourceFileName!
-        call !__SourceFile!.cmd %CoreRT_BuildType%
+        call !__SourceFile!.cmd !__SourceFolder!\bin\%CoreRT_BuildType%\dnxcore50\win7-x64\native !__SourceFileName!.exe
         set __SavedErrorLevel=!ErrorLevel!
     )
 

@@ -7,11 +7,11 @@
 #pragma warning disable 649
 
 using System;
-using System.Linq;
 using System.IO;
 using System.Collections.Generic;
 using System.Reflection;
 using System.Threading;
+using Internal.LowLevelLinq;
 using Internal.Metadata.NativeFormat.Writer;
 using Internal.NativeFormat;
 using HandleType = Internal.Metadata.NativeFormat.HandleType;
@@ -4241,6 +4241,78 @@ namespace Internal.Metadata.NativeFormat.Writer
         public MetadataRecord Type;
         public List<ParameterTypeSignature> Parameters = new List<ParameterTypeSignature>();
     } // PropertySignature
+
+    /// <summary>
+    /// QualifiedField
+    /// </summary>
+    public partial class QualifiedField : MetadataRecord
+    {
+        public override HandleType HandleType
+        {
+            get
+            {
+                return HandleType.QualifiedField;
+            }
+        } // HandleType
+
+        internal override void Visit(IRecordVisitor visitor)
+        {
+            Field = visitor.Visit(this, Field);
+            EnclosingType = visitor.Visit(this, EnclosingType);
+        } // Visit
+
+        public override sealed bool Equals(Object obj)
+        {
+            if (Object.ReferenceEquals(this, obj)) return true;
+            var other = obj as QualifiedField;
+            if (other == null) return false;
+            if (!Object.Equals(Field, other.Field)) return false;
+            if (!Object.Equals(EnclosingType, other.EnclosingType)) return false;
+            return true;
+        } // Equals
+
+        public override sealed int GetHashCode()
+        {
+            if (_hash != 0)
+                return _hash;
+            EnterGetHashCode();
+            int hash = -577389343;
+            hash = ((hash << 13) - (hash >> 19)) ^ (Field == null ? 0 : Field.GetHashCode());
+            hash = ((hash << 13) - (hash >> 19)) ^ (EnclosingType == null ? 0 : EnclosingType.GetHashCode());
+            LeaveGetHashCode();
+            _hash = hash;
+            return _hash;
+        } // GetHashCode
+
+        internal override void Save(NativeWriter writer)
+        {
+            writer.Write(Field);
+            writer.Write(EnclosingType);
+        } // Save
+
+        internal static QualifiedFieldHandle AsHandle(QualifiedField record)
+        {
+            if (record == null)
+            {
+                return new QualifiedFieldHandle(0);
+            }
+            else
+            {
+                return record.Handle;
+            }
+        } // AsHandle
+
+        internal new QualifiedFieldHandle Handle
+        {
+            get
+            {
+                return new QualifiedFieldHandle(HandleOffset);
+            }
+        } // Handle
+
+        public Field Field;
+        public TypeDefinition EnclosingType;
+    } // QualifiedField
 
     /// <summary>
     /// QualifiedMethod

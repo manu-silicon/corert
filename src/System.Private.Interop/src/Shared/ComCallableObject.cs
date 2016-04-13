@@ -106,14 +106,14 @@ namespace System.Runtime.InteropServices
 
             if (vt == default(IntPtr))
             {
-                // McgTypeInfo.RawValue points to an individual McgInterfaceData static field which should have a symbol in pdb file
-
 #if ENABLE_WINRT
-                throw new MissingInteropDataException(McgTypeHelpers.GetDiagnosticMessageForMissingType(managedCCW.TargetObject.GetType().TypeHandle));
+                Debug.Assert(!typeInfo.IsNull);
+                bool isWinRT = false;
+                string typeName = typeInfo.ContainingModule.GetTypeName(typeInfo.ItfType, ref isWinRT);
+                throw new MissingInteropDataException(String.Format(SR.ComTypeMarshalling_MissingInteropData, typeName));
 #else
                 Environment.FailFast("CCW discarded.");
 #endif
-
             }
 
             pCcw->m_pVtable = vt.ToPointer();
@@ -1052,6 +1052,11 @@ namespace System.Runtime.InteropServices
         /// </summary>
         CCWTemplateInfo m_ccwTemplateInfo;
 
+        /// <summary>
+        /// Indicates whether it supports ICustomQueryInterface
+        /// </summary>
+        bool m_supportsICustomQueryInterface;
+
         #endregion
 
 
@@ -1204,6 +1209,10 @@ namespace System.Runtime.InteropServices
             m_pNativeCCW = __native_ccw.Allocate(this, target);
             m_target = target;
 
+#pragma warning disable 618
+            m_supportsICustomQueryInterface = target is ICustomQueryInterface;
+#pragma warning restore 618
+
             if (locked)
                 CCWLookupMap.RegisterLocked(m_pNativeCCW);
             else
@@ -1352,6 +1361,10 @@ namespace System.Runtime.InteropServices
                         // Every CCW implements IMarshal
                         return true;
 
+                    case InternalModule.Indexes.IDispatch:
+                        // IDispatch is not supported for UWP apps
+                        return false;
+
                     default:
                         Debug.Assert(false, "Unrecgonized InternalModule.Index");
                         break;
@@ -1376,10 +1389,11 @@ namespace System.Runtime.InteropServices
             // Simplified implementation of ICustomQueryInterface
             // It is needed internally to customize CCW behavior
             //
-            ICustomQueryInterface customQueryInterfaceImpl = targetObject as ICustomQueryInterface;
 
-            if (customQueryInterfaceImpl != null)
+            if (m_supportsICustomQueryInterface)
             {
+                ICustomQueryInterface customQueryInterfaceImpl = targetObject as ICustomQueryInterface;
+
                 IntPtr pRet;
                 CustomQueryInterfaceResult result = customQueryInterfaceImpl.GetInterface(ref iid, out pRet);
                 if (result == CustomQueryInterfaceResult.Failed)

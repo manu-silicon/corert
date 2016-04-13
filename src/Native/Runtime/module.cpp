@@ -7,7 +7,7 @@
 #include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "holder.h"
 #include "gcrhinterface.h"
@@ -49,26 +49,6 @@ Module::Module(ModuleHeader *pModuleHeader) :
     m_MethodList(),
     m_fFinalizerInitComplete(false)
 {
-}
-
-Module * Module::Create(SimpleModuleHeader *pModuleHeader)
-{
-    NewHolder<Module> pNewModule = new (nothrow) Module(nullptr);
-    if (NULL == pNewModule)
-        return NULL;
-
-    pNewModule->m_pSimpleModuleHeader = pModuleHeader;
-    pNewModule->m_pEHTypeTable = nullptr;
-    pNewModule->m_pbDeltaShortcutTable = nullptr;
-    pNewModule->m_FrozenSegment = nullptr;
-    pNewModule->m_pStaticsGCInfo = dac_cast<PTR_StaticGcDesc>(pModuleHeader->m_pStaticsGcInfo);
-    pNewModule->m_pStaticsGCDataSection = dac_cast<PTR_UInt8>((UInt8*)pModuleHeader->m_pStaticsGcDataSection);
-    pNewModule->m_pThreadStaticsGCInfo = nullptr;
-
-    pNewModule->m_hOsModuleHandle = PalGetModuleHandleFromPointer(pModuleHeader);
-
-    pNewModule.SuppressRelease();
-    return pNewModule;
 }
 
 Module * Module::Create(ModuleHeader *pModuleHeader)
@@ -555,12 +535,6 @@ bool Module::EHEnumNext(EHEnumState * pEHEnumState, EHClause * pEHClauseOut)
     // For each clause, we have up to 4 integers:
     //      1)  try start offset
     //      2)  (try length << 2) | clauseKind
-    //
-    //      Local exceptions
-    //      3) if (typed || fault) { handler start offset }
-    //      4) if (typed)          { index into type table }
-    //
-    //      CLR exceptions
     //      3)  if (typed || fault || filter)    { handler start offset }
     //      4a) if (typed)                       { index into type table }
     //      4b) if (filter)                      { filter start offset }
@@ -593,7 +567,8 @@ bool Module::EHEnumNext(EHEnumState * pEHEnumState, EHClause * pEHClauseOut)
         pEHClauseOut->m_handlerOffset = VarInt::ReadUnsigned(pEnumState->pEHInfo);
         pEHClauseOut->m_filterOffset = VarInt::ReadUnsigned(pEnumState->pEHInfo);
         break;
-    case EH_CLAUSE_FAIL_FAST:
+    default:
+        ASSERT_UNCONDITIONALLY("Unexpected EHClauseKind");
         break;
     }
 
@@ -742,28 +717,33 @@ EEType * Module::GetArrayBaseType()
     return pArrayBaseType;
 }
 
-// Return the classlib-defined GetRuntimeException helper. Returns NULL if this is not a classlib module, or
-// if this classlib module fails to export the helper.
-void * Module::GetClasslibRuntimeExceptionHelper()
+// Return the classlib-defined helper.
+void * Module::GetClasslibFunction(ClasslibFunctionId functionId)
 {
-    return m_pModuleHeader->Get_GetRuntimeException();
-}
+    // First, delegate the call to the classlib module that this module was compiled against.
+    if (!IsClasslibModule())
+        return GetClasslibModule()->GetClasslibFunction(functionId);
 
-// Return the classlib-defined FailFast helper. Returns NULL if this is not a classlib module, or
-// if this classlib module fails to export the helper.
-void * Module::GetClasslibFailFastHelper()
-{
-    return m_pModuleHeader->Get_FailFast();
-}
+    // Lookup the method and return it. If we don't find it, we just return NULL.
+    void * pMethod = NULL;
 
-void * Module::GetClasslibUnhandledExceptionHandlerHelper()
-{
-    return m_pModuleHeader->Get_UnhandledExceptionHandler();
-}
+    switch (functionId)
+    {
+    case ClasslibFunctionId::GetRuntimeException:
+        pMethod = m_pModuleHeader->Get_GetRuntimeException();
+        break;
+    case ClasslibFunctionId::AppendExceptionStackFrame:
+        pMethod = m_pModuleHeader->Get_AppendExceptionStackFrame();
+        break;
+    case ClasslibFunctionId::FailFast:
+        pMethod = m_pModuleHeader->Get_FailFast();
+        break;
+    case ClasslibFunctionId::UnhandledExceptionHandler:
+        pMethod = m_pModuleHeader->Get_UnhandledExceptionHandler();
+        break;
+    }
 
-void * Module::GetClasslibAppendExceptionStackFrameHelper()
-{
-    return m_pModuleHeader->Get_AppendExceptionStackFrame();
+    return pMethod;
 }
 
 // Get classlib-defined helper for running deferred static class constructors. Returns NULL if this is not the

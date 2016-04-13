@@ -10,7 +10,7 @@
 #include "CommonMacros.inl"
 #include "Volatile.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 
 #include "slist.h"
 #include "gcrhinterface.h"
@@ -156,7 +156,7 @@ COOP_PINVOKE_HELPER(Array *, RhpNewArray, (EEType * pArrayEEType, int numElement
     {
         // Perform the size computation using 64-bit integeres to detect overflow
         uint64_t size64 = (uint64_t)pArrayEEType->get_BaseSize() + ((uint64_t)numElements * (uint64_t)pArrayEEType->get_ComponentSize());
-        size64 = ALIGN_UP(size, sizeof(UIntNative));
+        size64 = (size64 + (sizeof(UIntNative)-1)) & ~(sizeof(UIntNative)-1);
 
         size = (size_t)size64;
         if (size != size64)
@@ -389,4 +389,41 @@ COOP_PINVOKE_HELPER(Int64, RhpLockCmpXchg64, (Int64 * location, Int64 value, Int
 COOP_PINVOKE_HELPER(void, RhpMemoryBarrier, ())
 {
     PalMemoryBarrier();
+}
+
+COOP_PINVOKE_HELPER(void, Native_GetThunksBase, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(void, Native_GetNumThunksPerMapping, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(void, Native_GetThunkSize, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(void, RhCallDescrWorker, (void * callDescr))
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(Int64, RhGetGcTotalMemory, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+    return 0;
+}
+
+COOP_PINVOKE_HELPER(void, RhpETWLogLiveCom, (Int32 eventType, void * ccwHandle, void * objectId, void * typeRawValue, void * iUnknown, void * vTable, Int32 comRefCount, Int32 jupiterRefCount, Int32 flags))
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(bool, RhpETWShouldWalkCom, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+    return false;
 }

@@ -12,7 +12,7 @@
 #include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "holder.h"
 #include "Crst.h"
@@ -135,6 +135,9 @@ COOP_PINVOKE_HELPER(HANDLE, RhGetModuleFromPointer, (PTR_VOID pPointerVal))
 
 COOP_PINVOKE_HELPER(HANDLE, RhGetModuleFromEEType, (EEType * pEEType))
 {
+#if CORERT
+    return (HANDLE)(pEEType->GetModuleManager());
+#else
     // For dynamically created types, return the module handle that contains the template type
     if (pEEType->IsDynamicType())
         pEEType = pEEType->get_DynamicTemplateType();
@@ -149,10 +152,27 @@ COOP_PINVOKE_HELPER(HANDLE, RhGetModuleFromEEType, (EEType * pEEType))
     // We should never get here (an EEType not located in any module) so fail fast to indicate the bug.
     RhFailFast();
     return NULL;
+#endif // !CORERT
 }
 
 COOP_PINVOKE_HELPER(Boolean, RhFindBlob, (HANDLE hOsModule, UInt32 blobId, UInt8 ** ppbBlob, UInt32 * pcbBlob))
 {
+#if CORERT
+    ReadyToRunSectionType section =
+        (ReadyToRunSectionType)((UInt32)ReadyToRunSectionType::ReadonlyBlobRegionStart + blobId);
+    ASSERT(section <= ReadyToRunSectionType::ReadonlyBlobRegionEnd);
+
+    ModuleManager* pModule = (ModuleManager*)hOsModule;
+
+    int length;
+    void* pBlob;
+    pBlob = pModule->GetModuleSection(section, &length);
+
+    *ppbBlob = (UInt8*)pBlob;
+    *pcbBlob = (UInt32)length;
+
+    return pBlob != NULL;
+#else
     // Search for the Redhawk module contained by the OS module.
     FOREACH_MODULE(pModule)
     {
@@ -193,6 +213,7 @@ COOP_PINVOKE_HELPER(Boolean, RhFindBlob, (HANDLE hOsModule, UInt32 blobId, UInt8
     RhFailFast();
 
     return FALSE;
+#endif // !CORERT
 }
 
 // This helper is not called directly but is used by the implementation of RhpCheckCctor to locate the
@@ -563,3 +584,15 @@ COOP_PINVOKE_HELPER(void*, RhGetUniversalTransitionThunk, ())
 {
     return (void*)RhpUniversalTransition;
 }
+
+#ifdef CORERT
+COOP_PINVOKE_HELPER(void*, RhpGetModuleSection, (ModuleManager* pModule, Int32 headerId, Int32* length))
+{
+    return pModule->GetModuleSection((ReadyToRunSectionType)headerId, length);
+}
+
+COOP_PINVOKE_HELPER(void*, RhpCreateModuleManager, (void* pModuleHeader))
+{
+    return ModuleManager::Create(pModuleHeader);
+}
+#endif

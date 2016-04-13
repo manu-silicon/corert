@@ -20,22 +20,13 @@
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Debug|x64'">
     <PlatformTarget>x64</PlatformTarget>
-    <DebugSymbols>true</DebugSymbols>
-    <DebugType>full</DebugType>
-    <Optimize>false</Optimize>
     <OutputPath>bin\Debug\</OutputPath>
-    <DefineConstants>DEBUG;TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <PropertyGroup Condition="'$(Configuration)|$(Platform)' == 'Release|x64'">
     <PlatformTarget>x64</PlatformTarget>
-    <DebugType>pdbonly</DebugType>
-    <Optimize>true</Optimize>
     <OutputPath>bin\Release\</OutputPath>
-    <DefineConstants>TRACE</DefineConstants>
     <ErrorReport>prompt</ErrorReport>
-    <WarningLevel>4</WarningLevel>
   </PropertyGroup>
   <ItemGroup>
     <Compile Include="..\src\Program.cs" >
@@ -46,8 +37,8 @@
     <Compile Include="..\..\Common\src\CommandLine\CommandLineException.cs">
       <Link>CommandLine\CommandLineException.cs</Link>
     </Compile>
-    <Compile Include="..\..\Common\src\CommandLine\CommandLineParser.cs">
-      <Link>CommandLine\CommandLineParser.cs</Link>
+    <Compile Include="..\..\Common\src\CommandLine\CommandLineHelpers.cs">
+      <Link>CommandLine\CommandLineHelpers.cs</Link>
     </Compile>
   </ItemGroup>
   <ItemGroup>
@@ -70,14 +61,14 @@
     <Reference Include="System.Core" />
   </ItemGroup>
   <ItemGroup>
-    <Content Include="..\..\..\bin\Product\Windows_NT.$(Platform).$(Configuration)\.nuget\publish1\jitinterface.dll">
+    <Content Include="..\..\..\bin\Product\Windows_NT.$(Platform).$(Configuration)\packaging\publish1\jitinterface.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\..\bin\Product\Windows_NT.$(Platform).$(Configuration)\.nuget\publish1\objwriter.dll">
+    <Content Include="..\..\..\bin\Product\Windows_NT.$(Platform).$(Configuration)\packaging\publish1\objwriter.dll">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
     </Content>
-    <Content Include="..\..\..\bin\Product\Windows_NT.$(Platform).$(Configuration)\.nuget\publish1\ryujit.dll">
-      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+    <Content Include="..\..\..\bin\Product\Windows_NT.$(Platform).$(Configuration)\packaging\publish1\ryujit.dll">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
     </Content>
   </ItemGroup>
   <Import Project="$([MSBuild]::GetDirectoryNameOfFileAbove($(MSBuildThisFileDirectory), dir.targets))\dir.targets" />

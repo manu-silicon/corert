@@ -7,7 +7,7 @@
 #include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "gcrhinterface.h"
 #include "varint.h"
@@ -317,19 +317,26 @@ DECLSPEC_THREAD ThreadBuffer tls_CurrentThread =
     INVALID_HANDLE_VALUE,               // m_hPalThread
     0,                                  // m_ppvHijackedReturnAddressLocation
     0,                                  // m_pvHijackedReturnAddress
+    0,                                  // m_pExInfoStackHead
     0,                                  // m_pStackLow
     0,                                  // m_pStackHigh
-    0,                                  // m_uPalThreadId
+    0,                                  // m_pTEB
+    0,                                  // m_uPalThreadIdForLogging
 };
+
+#ifdef CORERT
+Thread * FASTCALL RhpGetThread()
+{
+    return (Thread *)&tls_CurrentThread;
+}
+#endif
 
 // static
 void * ThreadStore::CreateCurrentThreadBuffer()
 {
     void * pvBuffer = &tls_CurrentThread;
 
-#if !defined(CORERT) // @TODO: CORERT: No assembly routine defined to verify against.
     ASSERT(RhpGetThread() == pvBuffer);
-#endif // !defined(CORERT)
 
     return pvBuffer;
 }

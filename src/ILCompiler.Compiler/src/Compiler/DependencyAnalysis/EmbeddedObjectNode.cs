@@ -2,29 +2,45 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
-using System;
 using System.Collections.Generic;
-using System.Linq;
-using System.Text;
-using System.Threading.Tasks;
+
 using ILCompiler.DependencyAnalysisFramework;
+
+using Debug = System.Diagnostics.Debug;
 
 namespace ILCompiler.DependencyAnalysis
 {
     public abstract class EmbeddedObjectNode : DependencyNodeCore<NodeFactory>
     {
-        public int Offset
+        private const int InvalidOffset = int.MinValue;
+
+        private int _offset;
+
+        public EmbeddedObjectNode()
         {
-            get;
-            set;
+            _offset = InvalidOffset;
         }
 
-        public override IEnumerable<CombinedDependencyListEntry> GetConditionalStaticDependencies(NodeFactory context)
+        public int Offset
+        {
+            get
+            {
+                Debug.Assert(_offset != InvalidOffset);
+                return _offset;
+            }
+            set
+            {
+                Debug.Assert(_offset == InvalidOffset || _offset == value);
+                _offset = value;
+            }
+        }
+
+        public override IEnumerable<CombinedDependencyListEntry> GetConditionalStaticDependencies(NodeFactory factory)
         {
             return null;
         }
 
-        public override IEnumerable<CombinedDependencyListEntry> SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, NodeFactory context)
+        public override IEnumerable<CombinedDependencyListEntry> SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, NodeFactory factory)
         {
             return null;
         }

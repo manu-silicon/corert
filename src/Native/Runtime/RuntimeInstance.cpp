@@ -7,7 +7,7 @@
 #include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "holder.h"
 #include "Crst.h"
@@ -448,27 +448,6 @@ bool RuntimeInstance::RegisterModule(ModuleHeader *pModuleHeader)
     DebugEventSource::SendModuleLoadEvent(pModule);
     return true;
 }
-
-bool RuntimeInstance::RegisterSimpleModule(SimpleModuleHeader *pModuleHeader)
-{
-    CreateHolder<Module> pModule = Module::Create(pModuleHeader);
-
-    if (NULL == pModule)
-        return false;
-
-    {
-        // WARNING: This region must be kept small and must not callout 
-        // to arbitrary code.  See Thread::Hijack for more details.
-        ReaderWriterLock::WriteHolder write(&m_ModuleListLock);
-        m_ModuleList.PushHead(pModule);
-    }
-
-    pModule.SuppressRelease();
-    // This event must occur after the module is added to the enumeration
-    DebugEventSource::SendModuleLoadEvent(pModule);
-    return true;
-}
-
 
 void RuntimeInstance::UnregisterModule(Module *pModule)
 {

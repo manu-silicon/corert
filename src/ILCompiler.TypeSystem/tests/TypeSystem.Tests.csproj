@@ -26,12 +26,20 @@
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <Targets>Build;DebugSymbolsProjectOutputGroup</Targets>
     </ProjectReference>
+    <ProjectReference Include="ILTestAssembly\ILTestAssembly.ilproj">
+      <ReferenceOutputAssembly>false</ReferenceOutputAssembly>
+      <OutputItemType>Content</OutputItemType>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Targets>Build</Targets>
+    </ProjectReference>
   </ItemGroup>
   <ItemGroup>
     <Compile Include="ArchitectureSpecificFieldLayoutTests.cs" />
     <Compile Include="HashcodeTests.cs" />
     <Compile Include="InterfacesTests.cs" />
+    <Compile Include="SyntheticVirtualOverrideTests.cs" />
     <Compile Include="TestMetadataFieldLayoutAlgorithm.cs" />
+    <Compile Include="TypeNameParsingTests.cs" />
     <Compile Include="VirtualFunctionOverrideTests.cs" />
     <Compile Include="InstanceFieldLayoutTests.cs" />
     <Compile Include="StaticFieldLayoutTests.cs" />

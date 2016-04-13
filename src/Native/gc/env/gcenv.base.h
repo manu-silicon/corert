@@ -35,7 +35,6 @@
 
 typedef uint32_t BOOL;
 typedef uint32_t DWORD;
-typedef void* LPVOID;
 
 // -----------------------------------------------------------------------------------------------------------
 // HRESULT subset.
@@ -569,7 +568,7 @@ public:
     typedef CLRConfigTypes ConfigStringInfo;
 
     static uint32_t GetConfigValue(ConfigDWORDInfo eType);
-    static HRESULT GetConfigValue(ConfigStringInfo /*eType*/, TCHAR * * outVal);
+    static HRESULT GetConfigValue(ConfigStringInfo /*eType*/, __out_z TCHAR * * outVal);
 };
 
 inline bool FitsInU1(uint64_t val)

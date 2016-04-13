@@ -39,6 +39,10 @@ inline BOOL ShouldTrackMovementForProfilerOrEtw()
 }
 #endif // defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
 
+#if defined(BACKGROUND_GC) && defined(FEATURE_EVENT_TRACE)
+BOOL bgc_heap_walk_for_etw_p = FALSE;
+#endif //BACKGROUND_GC && FEATURE_EVENT_TRACE
+
 #if defined(FEATURE_REDHAWK)
 #define MAYBE_UNUSED_VAR(v) v = v
 #else
@@ -395,7 +399,7 @@ void log_va_msg(const char *fmt, va_list args)
 
     pBuffer[0] = '\n';
     int buffer_start = 1;
-    int pid_len = sprintf_s (&pBuffer[buffer_start], BUFFERSIZE - buffer_start, "[%5d]", GCToOSInterface::GetCurrentThreadIdForLogging());
+    int pid_len = sprintf_s (&pBuffer[buffer_start], BUFFERSIZE - buffer_start, "[%5lld]", GCToOSInterface::GetCurrentThreadIdForLogging());
     buffer_start += pid_len;
     memset(&pBuffer[buffer_start], '-', BUFFERSIZE - buffer_start);
     int msg_len = _vsnprintf(&pBuffer[buffer_start], BUFFERSIZE - buffer_start, fmt, args );
@@ -464,7 +468,7 @@ void log_va_msg_config(const char *fmt, va_list args)
 
     pBuffer[0] = '\n';
     int buffer_start = 1;
-    int msg_len = _vsnprintf (&pBuffer[buffer_start], BUFFERSIZE - buffer_start, fmt, args );
+    int msg_len = _vsnprintf_s (&pBuffer[buffer_start], BUFFERSIZE - buffer_start, _TRUNCATE, fmt, args );
     assert (msg_len != -1);
     msg_len += buffer_start;
 
@@ -1502,6 +1506,18 @@ void WaitLongerNoInstru (int i)
     {
         if (bToggleGC || g_TrapReturningThreads)
         {
+#ifdef _DEBUG
+            // In debug builds, all enter_spin_lock operations go through this code.  If a GC has
+            // started, it is important to block until the GC thread calls set_gc_done (since it is
+            // guaranteed to have cleared g_TrapReturningThreads by this point).  This avoids livelock
+            // conditions which can otherwise occur if threads are allowed to spin in this function
+            // (and therefore starve the GC thread) between the point when the GC thread sets the
+            // WaitForGC event and the point when the GC thread clears g_TrapReturningThreads.
+            if (gc_heap::gc_started)
+            {
+                gc_heap::wait_for_gc_done();
+            }
+#endif // _DEBUG
             GCToEEInterface::DisablePreemptiveGC(pCurThread);
             if (!bToggleGC)
             {
@@ -2271,7 +2287,7 @@ size_t      gc_heap::gc_last_ephemeral_decommit_time = 0;
 size_t      gc_heap::gc_gen0_desired_high;
 
 #ifdef SHORT_PLUGS
-float       gc_heap::short_plugs_pad_ratio = 0;
+double       gc_heap::short_plugs_pad_ratio = 0;
 #endif //SHORT_PLUGS
 
 #if defined(BIT64)
@@ -4354,8 +4370,8 @@ gc_heap::compute_new_ephemeral_size()
 #endif //RESPECT_LARGE_ALIGNMENT
 
 #ifdef SHORT_PLUGS
-    total_ephemeral_size = Align ((size_t)((float)total_ephemeral_size * short_plugs_pad_ratio) + 1);
-    total_ephemeral_size += Align (min_obj_size);
+    total_ephemeral_size = Align ((size_t)((double)total_ephemeral_size * short_plugs_pad_ratio) + 1);
+    total_ephemeral_size += Align (DESIRED_PLUG_LENGTH);
 #endif //SHORT_PLUGS
 
     dprintf (3, ("total ephemeral size is %Ix, padding %Ix(%Ix)", 
@@ -8177,7 +8193,7 @@ int index_of_set_bit (size_t power2)
     while (low <= high)
     {
         mid = ((low + high)/2);
-        size_t temp = 1 << mid;
+        size_t temp = (size_t)1 << mid;
         if (power2 & temp)
         {
             return mid;
@@ -9830,10 +9846,7 @@ gc_heap::init_semi_shared()
 #endif //GC_CONFIG_DRIVEN
 
 #ifdef SHORT_PLUGS
-    {
-        size_t max_num_objects_in_plug = (size_t)DESIRED_PLUG_LENGTH / Align(min_obj_size);
-        short_plugs_pad_ratio = (float)(max_num_objects_in_plug + 1) / (float)max_num_objects_in_plug;
-    }
+    short_plugs_pad_ratio = (double)DESIRED_PLUG_LENGTH / (double)(DESIRED_PLUG_LENGTH - Align (min_obj_size));
 #endif //SHORT_PLUGS
 
     ret = 1;
@@ -15282,10 +15295,14 @@ void gc_heap::gc1()
 #if defined(VERIFY_HEAP) || (defined (FEATURE_EVENT_TRACE) && defined(BACKGROUND_GC))
     if (FALSE 
 #ifdef VERIFY_HEAP
+        // Note that right now g_pConfig->GetHeapVerifyLevel always returns the same
+        // value. If we ever allow randomly adjusting this as the process runs,
+        // we cannot call it this way as joins need to match - we must have the same
+        // value for all heaps like we do with bgc_heap_walk_for_etw_p.
         || (g_pConfig->GetHeapVerifyLevel() & EEConfig::HEAPVERIFY_GC)
 #endif
 #if defined(FEATURE_EVENT_TRACE) && defined(BACKGROUND_GC)
-        || (ETW::GCLog::ShouldTrackMovementForEtw() && settings.concurrent)
+        || (bgc_heap_walk_for_etw_p && settings.concurrent)
 #endif
         )
     {
@@ -15328,7 +15345,7 @@ void gc_heap::gc1()
 #ifdef BACKGROUND_GC
         assert (settings.concurrent == (uint32_t)(bgc_thread_id.IsCurrentThread()));
 #ifdef FEATURE_EVENT_TRACE
-        if (ETW::GCLog::ShouldTrackMovementForEtw() && settings.concurrent)
+        if (bgc_heap_walk_for_etw_p && settings.concurrent)
         {
             make_free_lists_for_profiler_for_bgc();
         }
@@ -16399,8 +16416,7 @@ int gc_heap::garbage_collect (int n)
         }
 
         {
-            int gen_num_for_data = ((settings.condemned_generation < (max_generation - 1)) ? 
-                                    (settings.condemned_generation + 1) : (max_generation + 1));
+            int gen_num_for_data = max_generation + 1;
             for (int i = 0; i <= gen_num_for_data; i++)
             {
                 gc_data_per_heap.gen_data[i].size_before = generation_size (i);
@@ -23773,13 +23789,11 @@ void gc_heap::walk_plug (uint8_t* plug, size_t size, BOOL check_last_object_p, w
 
     STRESS_LOG_PLUG_MOVE(plug, (plug + size), -last_plug_relocation);
 
-#ifdef FEATURE_EVENT_TRACE
     ETW::GCLog::MovedReference(plug,
                                (plug + size),
                                reloc,
                                profiling_context,
                                settings.compaction);
-#endif
 
     if (check_last_object_p)
     {
@@ -26748,7 +26762,7 @@ uint32_t gc_heap::bgc_thread_function()
     Thread* current_thread = GetThread();
     BOOL cooperative_mode = TRUE;
     bgc_thread_id.SetToCurrentThread();
-    dprintf (1, ("bgc_thread_id is set to %Ix", GCToOSInterface::GetCurrentThreadIdForLogging()));
+    dprintf (1, ("bgc_thread_id is set to %llx", GCToOSInterface::GetCurrentThreadIdForLogging()));
     //this also indicates that the thread is ready.
     background_gc_create_event.Set();
     while (1)
@@ -31184,6 +31198,10 @@ void gc_heap::background_sweep()
     if (bgc_t_join.joined())
 #endif //MULTIPLE_HEAPS
     {
+#ifdef FEATURE_EVENT_TRACE
+        bgc_heap_walk_for_etw_p = ETW::GCLog::ShouldTrackMovementForEtw();
+#endif //FEATURE_EVENT_TRACE
+
         leave_spin_lock (&gc_lock);
 
 #ifdef MULTIPLE_HEAPS
@@ -33331,35 +33349,6 @@ HRESULT GCHeap::Shutdown ()
     gc_heap::shutdown_gc();
 
     return S_OK;
-}
-
-//used by static variable implementation
-void CGCDescGcScan(LPVOID pvCGCDesc, promote_func* fn, ScanContext* sc)
-{
-    CGCDesc* map = (CGCDesc*)pvCGCDesc;
-
-    CGCDescSeries *last = map->GetLowestSeries();
-    CGCDescSeries *cur = map->GetHighestSeries();
-
-    assert (cur >= last);
-    do
-    {
-        uint8_t** ppslot = (uint8_t**)((uint8_t*)pvCGCDesc + cur->GetSeriesOffset());
-        uint8_t**ppstop = (uint8_t**)((uint8_t*)ppslot + cur->GetSeriesSize());
-
-        while (ppslot < ppstop)
-        {
-            if (*ppslot)
-            {
-                (fn) ((Object**)ppslot, sc, 0);
-            }
-
-            ppslot++;
-        }
-
-        cur--;
-    }
-    while (cur >= last);
 }
 
 // Wait until a garbage collection is complete
@@ -35601,7 +35590,6 @@ size_t GCHeap::GetValidGen0MaxSize(size_t seg_size)
 
     if ((gen0size == 0) || !GCHeap::IsValidGen0MaxSize(gen0size))
     {
-#if !defined(FEATURE_REDHAWK)
 #ifdef SERVER_GC
         // performance data seems to indicate halving the size results
         // in optimal perf.  Ask for adjusted gen0 size.
@@ -35633,9 +35621,6 @@ size_t GCHeap::GetValidGen0MaxSize(size_t seg_size)
 #else //SERVER_GC
         gen0size = max((4*GCToOSInterface::GetLargestOnDieCacheSize(TRUE)/5),(256*1024));
 #endif //SERVER_GC
-#else //!FEATURE_REDHAWK
-        gen0size = (256*1024);
-#endif //!FEATURE_REDHAWK
     }
 
     // Generation 0 must never be more than 1/2 the segment size.
@@ -36620,7 +36605,7 @@ void GCHeap::WalkObject (Object* obj, walk_fn fn, void* context)
 #endif //defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
 
 // Go through and touch (read) each page straddled by a memory block.
-void TouchPages(LPVOID pStart, uint32_t cb)
+void TouchPages(void * pStart, size_t cb)
 {
     const uint32_t pagesize = OS_PAGE_SIZE;
     _ASSERTE(0 == (pagesize & (pagesize-1))); // Must be a power of 2.
@@ -36719,7 +36704,7 @@ void initGCShadow()
     }
 }
 
-#define INVALIDGCVALUE (LPVOID)((size_t)0xcccccccd)
+#define INVALIDGCVALUE (void*)((size_t)0xcccccccd)
 
     // test to see if 'ptr' was only updated via the write barrier.
 inline void testGCShadow(Object** ptr)

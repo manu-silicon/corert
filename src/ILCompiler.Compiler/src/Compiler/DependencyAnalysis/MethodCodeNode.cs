@@ -8,11 +8,16 @@ using Internal.TypeSystem;
 
 namespace ILCompiler.DependencyAnalysis
 {
-    internal class MethodCodeNode : ObjectNode, INodeWithFrameInfo, INodeWithDebugInfo, ISymbolNode
+    internal class MethodCodeNode : ObjectNode, IMethodNode, INodeWithCodeInfo, INodeWithDebugInfo
     {
+        public static readonly ObjectNodeSection StartSection = new ObjectNodeSection(".managedcode$A", SectionType.Executable);
+        public static readonly ObjectNodeSection ContentSection = new ObjectNodeSection(".managedcode$I", SectionType.Executable);
+        public static readonly ObjectNodeSection EndSection = new ObjectNodeSection(".managedcode$Z", SectionType.Executable);
+
         private MethodDesc _method;
         private ObjectData _methodCode;
         private FrameInfo[] _frameInfos;
+        private ObjectData _ehInfo;
         private DebugLocInfo[] _debugLocInfos;
         private DebugVarInfo[] _debugVarInfos;
 
@@ -40,12 +45,18 @@ namespace ILCompiler.DependencyAnalysis
             return ((ISymbolNode)this).MangledName;
         }
 
-        public override string Section
+        public override ObjectNodeSection Section
         {
             get
             {
-                return "text";
+                // TODO: Exception handling on Unix
+                return _method.Context.Target.IsWindows ? ContentSection : ObjectNodeSection.TextSection;
             }
+        }
+
+        public override bool ShouldShareNodeAcrossModules(NodeFactory factory)
+        {
+            return factory.CompilationModuleGroup.ShouldShareAcrossModules(_method);
         }
 
         public override bool StaticDependenciesAreComputed
@@ -72,6 +83,32 @@ namespace ILCompiler.DependencyAnalysis
             }
         }
 
+        protected override DependencyList ComputeNonRelocationBasedDependencies(NodeFactory factory)
+        {
+            DependencyList dependencies = null;
+
+            TypeDesc owningType = _method.OwningType;
+            if (factory.TypeInitializationManager.HasEagerStaticConstructor(owningType))
+            {
+                if (dependencies == null)
+                    dependencies = new DependencyList();
+                dependencies.Add(factory.EagerCctorIndirection(owningType.GetStaticConstructor()), "Eager .cctor");
+            }
+
+            if (_ehInfo != null && _ehInfo.Relocs != null)
+            {
+                if (dependencies == null)
+                    dependencies = new DependencyList();
+
+                foreach (Relocation reloc in _ehInfo.Relocs)
+                {
+                    dependencies.Add(reloc.Target, "reloc");
+                }
+            }
+
+            return dependencies;
+        }
+
         public override ObjectData GetData(NodeFactory factory, bool relocsOnly)
         {
             return _methodCode;
@@ -85,10 +122,24 @@ namespace ILCompiler.DependencyAnalysis
             }
         }
 
+        public ObjectData EHInfo
+        {
+            get
+            {
+                return _ehInfo;
+            }
+        }
+
         public void InitializeFrameInfos(FrameInfo[] frameInfos)
         {
             Debug.Assert(_frameInfos == null);
             _frameInfos = frameInfos;
+        }
+
+        public void InitializeEHInfo(ObjectData ehInfo)
+        {
+            Debug.Assert(_ehInfo == null);
+            _ehInfo = ehInfo;
         }
 
         public DebugLocInfo[] DebugLocInfos
@@ -105,7 +156,7 @@ namespace ILCompiler.DependencyAnalysis
             {
                 return _debugVarInfos;
             }
-        }        
+        }
 
         public void InitializeDebugLocInfos(DebugLocInfo[] debugLocInfos)
         {

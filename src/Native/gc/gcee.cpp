@@ -402,7 +402,7 @@ void ProfScanRootsHelper(Object** ppObject, ScanContext *pSC, uint32_t dwFlags)
         pObj = (Object*) hp->find_object(o, hp->gc_low);
     }
 #endif //INTERIOR_POINTERS
-    ScanRootsHelper(&pObj, ppObject, pSC, dwFlags);
+    ScanRootsHelper(pObj, ppObject, pSC, dwFlags);
 #endif // defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
 }
 
@@ -541,12 +541,14 @@ void GCProfileWalkHeapWorker(BOOL fProfilerPinned, BOOL fShouldWalkHeapRootsForE
 #endif //MULTIPLE_HEAPS
         }
 
+#ifdef FEATURE_EVENT_TRACE
         // **** Done! Indicate to ETW helpers that the heap walk is done, so any buffers
         // should be flushed into the ETW stream
         if (fShouldWalkHeapObjectsForEtw || fShouldWalkHeapRootsForEtw)
         {
             ETW::GCLog::EndHeapDump(&profilerWalkHeapContext);
         }
+#endif // FEATURE_EVENT_TRACE
     }
 }
 #endif // defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)

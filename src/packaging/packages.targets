@@ -19,7 +19,7 @@
         <!-- Property needed for creating nupkgs -->
         <PropertyGroup>
             <ToolchainMilestone Condition="'$(ToolchainMilestone)'==''">prerelease</ToolchainMilestone>
-            <ToolchainVersion>1.0.5-$(ToolchainMilestone)-00001</ToolchainVersion>
+            <ToolchainVersion>1.0.6-$(ToolchainMilestone)-00003</ToolchainVersion>
             <RuntimeSdkVersion>$(ToolchainVersion)</RuntimeSdkVersion>
             <NuPkgRid>$(NuPkgRuntimeOS)-$(NuPkgRuntimePlatform)</NuPkgRid>
             
@@ -41,9 +41,11 @@
             <ILCompilerFiles Include="ilc.exe" />
             <ILCompilerFiles Include="ILCompiler.Compiler.dll" />
             <ILCompilerFiles Include="ILCompiler.DependencyAnalysisFramework.dll" />
+            <ILCompilerFiles Include="ILCompiler.MetadataTransform.dll" />
+            <ILCompilerFiles Include="ILCompiler.MetadataWriter.dll" />
             <ILCompilerFiles Include="ILCompiler.TypeSystem.dll" />
             <ILCompilerBinPlace Include="@(ILCompilerFiles)">
-                <Text><![CDATA[        <file src="$(RelativeProductBinDir)/%(Identity)" target="runtimes/any/lib/dotnet/%(Identity)" /> ]]></Text>
+                <Text><![CDATA[        <file src="$(RelativeProductBinDir)/ILCompiler/%(Identity)" target="runtimes/any/lib/dotnet/%(Identity)" /> ]]></Text>
             </ILCompilerBinPlace>
 
             <ILCompilerNativeFiles Include="jitinterface.dll" Condition="'$(OSGroup)'=='Windows_NT'" />
@@ -73,6 +75,8 @@
             <ILCompilerSdkFilesManaged Include="System.Private.StackTraceGenerator" />
             <ILCompilerSdkFilesManaged Include="System.Private.Threading" />
 
+            <ILCompilerSdkContentFiles Include="scripts/linkerscript" />
+
             <ILCompilerSdkBinPlace Include="@(ILCompilerSdkFiles)">
                 <Text><![CDATA[        <file src="$(RelativeProductBinDir)/lib/$(LibPrefix)%(Identity).$(StaticLibExt)" target="runtimes/$(NuPkgRid)/native/sdk/$(LibPrefix)%(Identity).$(StaticLibExt)" /> ]]></Text>
             </ILCompilerSdkBinPlace>
@@ -81,12 +85,15 @@
             </ILCompilerSdkBinPlace>
 
             <ILCompilerSdkBinPlace Include="@(ILCompilerSdkFilesManaged)">
-                <Text><![CDATA[        <file src="$(RelativeProductBinDir)/%(Identity).dll" target="runtimes/$(NuPkgRid)/native/sdk/%(Identity).dll" /> ]]></Text>
+                <Text><![CDATA[        <file src="$(RelativeProductBinDir)/%(Identity)/%(Identity).dll" target="runtimes/$(NuPkgRid)/native/sdk/%(Identity).dll" /> ]]></Text>
             </ILCompilerSdkBinPlace>
             <ILCompilerSdkBinPlace Include="@(ILCompilerSdkCppCodegenFiles)">
                 <Text><![CDATA[        <file src="src/%(Identity)" target="runtimes/$(NuPkgRid)/native/inc/%(Filename)%(Extension)" /> ]]></Text>
             </ILCompilerSdkBinPlace>
-            
+            <ILCompilerSdkBinPlace Include="@(ILCompilerSdkContentFiles)">
+                <Text><![CDATA[        <file src="src/%(Identity)" target="runtimes/$(NuPkgRid)/native/sdk/%(Filename)%(Extension)" /> ]]></Text>
+            </ILCompilerSdkBinPlace>
+
             <!-- ILCompiler nuspec file -->
             <NuSpecFile Include="$(ToolchainPackageName)">
                 <Stage>1</Stage>
@@ -96,14 +103,15 @@
                 <Files>@(ILCompilerBinPlace -> '%(Text)', '')</Files>
                 <!-- TODO: Obtain this from project.lock.json -->
                 <Dependencies><![CDATA[
-        <dependency id="Microsoft.DotNet.ObjectWriter" version="1.0.7-prerelease-00001" />
-        <dependency id="Microsoft.DotNet.RyuJit" version="1.0.4-prerelease-00001" />
-        <dependency id="NETStandard.Library" version="1.0.0-rc2-23704" />
-        <dependency id="System.Collections.Immutable" version="1.1.37" />
-        <dependency id="System.IO.MemoryMappedFiles" version="4.0.0-rc2-23616" />
-        <dependency id="System.Reflection.Metadata" version="1.1.0" />
+        <dependency id="Microsoft.DotNet.ObjectWriter" version="1.0.11-prerelease-00001" />
+        <dependency id="Microsoft.DotNet.RyuJit" version="1.0.7-prerelease-00001" />
+        <dependency id="NETStandard.Library" version="1.5.0-rc2-23911" />
+        <dependency id="System.Collections.Immutable" version="1.2.0-rc2-23911" />
+        <dependency id="System.IO.MemoryMappedFiles" version="4.0.0-rc2-23911" />
+        <dependency id="System.Reflection.Metadata" version="1.3.0-rc2-23911" />
         <dependency id="System.Xml.ReaderWriter" version="4.0.0" />
         <dependency id="Microsoft.DiaSymReader" version="1.0.6" />
+        <dependency id="System.CommandLine" version="0.1.0-e160208-1" />
                     ]]></Dependencies>
             </NuSpecFile>
             
@@ -177,7 +185,7 @@
     %(NuSpecPackageMetadata)
   </metadata>
   <files>
-      <file src="$(RelativeProductBinDir)/.nuget/%(RedirPackage).runtime.json" target="runtime.json"></file>
+      <file src="$(RelativeProductBinDir)/packaging/%(RedirPackage).runtime.json" target="runtime.json"></file>
   </files>
 </package>
 ]]>
@@ -227,7 +235,7 @@
     },
 
     "dependencies": {
-        "NETStandard.Library": "1.0.0-rc2-23704",
+        "NETStandard.Library": "1.5.0-rc2-23911",
         "Microsoft.NETCore.TestHost": "1.0.0-beta-23504",
         "toolchain.$(NuPkgRid).$(RuntimeSdkPackageName)": "$(RuntimeSdkVersion)",
     },
@@ -236,6 +244,10 @@
         "dnxcore50": {
             "imports": "portable-net451+win8"
         }
+    },
+
+    "runtimes": {
+        "$(NuPkgRid)": {},
     }
 }]]>
             </Stage1ProjectJsonLines>
@@ -243,7 +255,7 @@
         <MakeDir Directories="$(Stage1ProjectDir)" Condition="!Exists('$(Stage1ProjectDir)')" />
         <WriteLinesToFile File="$(Stage1ProjectJsonFile)" Lines="$(Stage1ProjectJsonLines)" Overwrite="true" />
         <WriteLinesToFile File="$(Stage1ProjectDir)/Program.cs" Lines="class Program { public static void Main() { } }" Overwrite="true" />
-        <Exec Command="&quot;$(DnuToolPath)&quot; restore --quiet -s &quot;$(ProductPackageDir)&quot; $(DnuRestoreSource) &quot;$(Stage1ProjectDir)&quot; --runtime &quot;$(NuPkgRid)&quot;" />
+        <Exec Command="&quot;$(DnuToolPath)&quot; restore --quiet -s &quot;$(ProductPackageDir)&quot; $(DnuRestoreSource) &quot;$(Stage1ProjectDir)&quot;" />
         <Exec Command="&quot;$(DnuToolPath)&quot; publish &quot;$(Stage1ProjectDir)&quot; --native-subdirectory -o &quot;$(Stage1PublishDir)&quot; -f &quot;dnxcore50&quot; --runtime &quot;$(NuPkgRid)&quot;" />
 
     </Target>

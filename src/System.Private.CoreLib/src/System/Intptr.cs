@@ -53,7 +53,6 @@ namespace System
 
         [CLSCompliant(false)]
         [Intrinsic]
-        [SecurityCritical] // required to match contract
         [NonVersionable]
         public unsafe IntPtr(void* value)
         {
@@ -107,7 +106,6 @@ namespace System
 
         [CLSCompliant(false)]
         [Intrinsic]
-        [SecurityCritical] // required to match contract
         [NonVersionable]
         public unsafe static explicit operator IntPtr(void* value)
         {
@@ -241,8 +239,12 @@ namespace System
 
         public unsafe override int GetHashCode()
         {
-            // QUESTION: This HashCode seems to neglect the high order bits in calculating the hashcode?
-            return unchecked((int)((long)_value));
+#if BIT64
+            long l = (long)_value;
+            return (unchecked((int)l) ^ (int)(l >> 32));
+#else
+            return unchecked((int)_value);
+#endif
         }
     }
 }

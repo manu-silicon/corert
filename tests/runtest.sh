@@ -17,20 +17,20 @@ runtest()
     __SourceFolder=$1
     __SourceFileName=$2
     __SourceFile=${__SourceFolder}/${__SourceFileName}
-    ${__SourceFile}.sh $1 $2 ${CoreRT_BuildType}
+    ${__SourceFile}.sh $1/bin/${CoreRT_BuildType}/dnxcore50/${__BuildRid}/native $2
     return $?
 }
 
 restore()
 {
-    ${CoreRT_CliBinDir}/dotnet restore --quiet $1
+    ${CoreRT_CliBinDir}/dotnet restore --quiet $1 --source "https://dotnet.myget.org/F/dotnet-core"
 }
 
 compiletest()
 {
-    echo "Compiling dir $1 with dotnet compile $2"
+    echo "Compiling dir $1 with dotnet build $2"
     rm -rf $1/bin $1/obj
-    ${CoreRT_CliBinDir}/dotnet compile --native -c ${CoreRT_BuildType} --ilcpath ${CoreRT_ToolchainDir} $1 $2
+    ${CoreRT_CliBinDir}/dotnet build --runtime ${__BuildRid} --native -c ${CoreRT_BuildType} --ilcpath ${CoreRT_ToolchainDir} $1 $2
 }
 
 run_test_dir()
@@ -67,7 +67,7 @@ run_test_dir()
 }
 
 CoreRT_TestRoot=$(cd "$(dirname "$0")"; pwd -P)
-CoreRT_CliBinDir=${CoreRT_TestRoot}/../bin/tools/cli/bin
+CoreRT_CliBinDir=${CoreRT_TestRoot}/../bin/tools/cli
 CoreRT_BuildArch=x64
 CoreRT_BuildType=Debug
 CoreRT_TestRun=true
@@ -142,7 +142,7 @@ while [ "$1" != "" ]; do
             ;;
         -dotnetclipath) 
             shift
-            CoreRT_CliBinDir=$1/bin
+            CoreRT_CliBinDir=$1
             ;;
         *)
             ;;
@@ -153,9 +153,14 @@ done
 __BuildStr=${CoreRT_BuildOS}.${CoreRT_BuildArch}.${CoreRT_BuildType}
 __CoreRTTestBinDir=${CoreRT_TestRoot}/../bin/tests
 __LogDir=${CoreRT_TestRoot}/../bin/Logs/${__BuildStr}/tests
-__BuiltNuPkgDir=${CoreRT_TestRoot}/../bin/Product/${__BuildStr}/.nuget
 __PackageRestoreCmd=$CoreRT_TestRoot/restore.sh
-source ${__PackageRestoreCmd} -nugetexedir ${CoreRT_TestRoot}/../packages -nupkgdir ${__BuiltNuPkgDir} -nugetopt ${CoreRT_NuGetOptions}
+__build_os_lowcase=$(echo "${CoreRT_BuildOS}" | tr '[:upper:]' '[:lower:]')
+if [ ${__build_os_lowcase} != "osx" ]; then
+    __BuildRid=ubuntu.14.04-{CoreRT_BuildArch}
+else
+    __BuildRid=osx.10.10-{CoreRT_BuildArch}
+fi
+source ${__PackageRestoreCmd} -nugetexedir ${CoreRT_TestRoot}/../packages -nugetopt ${CoreRT_NuGetOptions}
 
 if [ ! -d ${CoreRT_AppDepSdkDir} ]; then
     echo "AppDep SDK not installed at ${CoreRT_AppDepSdkDir}"
@@ -178,11 +183,13 @@ __BuildOsLowcase=$(echo "${CoreRT_BuildOS}" | tr '[:upper:]' '[:lower:]')
 
 for json in $(find src -iname 'project.json')
 do
-    __restore=1
-    run_test_dir ${json} ${__restore} "Jit"
-    __restore=0
-    if [ ! -e `dirname ${json}`/no_cpp ]; then
-        run_test_dir ${json} ${__restore} "Cpp"
+    if [ ! -e `dirname ${json}`/no_unix ]; then
+        __restore=1
+        run_test_dir ${json} ${__restore} "Jit"
+        __restore=0
+        if [ ! -e `dirname ${json}`/no_cpp ]; then
+            run_test_dir ${json} ${__restore} "Cpp"
+        fi
     fi
 done
 

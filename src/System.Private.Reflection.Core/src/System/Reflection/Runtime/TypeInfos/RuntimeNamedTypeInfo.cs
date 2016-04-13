@@ -3,7 +3,6 @@
 // See the LICENSE file in the project root for more information.
 
 using global::System;
-using global::System.Linq;
 using global::System.Reflection;
 using global::System.Diagnostics;
 using global::System.Collections.Generic;
@@ -13,6 +12,7 @@ using global::System.Reflection.Runtime.General;
 using global::System.Reflection.Runtime.Assemblies;
 using global::System.Reflection.Runtime.CustomAttributes;
 
+using global::Internal.LowLevelLinq;
 using global::Internal.Reflection.Core.Execution;
 using global::Internal.Reflection.Core.NonPortable;
 
@@ -63,8 +63,10 @@ namespace System.Reflection.Runtime.TypeInfos
         {
             get
             {
+#if ENABLE_REFLECTION_TRACE
                 if (ReflectionTrace.Enabled)
                     ReflectionTrace.TypeInfo_CustomAttributes(this);
+#endif
 
                 IEnumerable<CustomAttributeData> customAttributes = RuntimeCustomAttributeData.GetCustomAttributes(this.ReflectionDomain, _reader, _typeDefinition.CustomAttributes);
                 foreach (CustomAttributeData cad in customAttributes)
@@ -84,8 +86,10 @@ namespace System.Reflection.Runtime.TypeInfos
         {
             get
             {
+#if ENABLE_REFLECTION_TRACE
                 if (ReflectionTrace.Enabled)
                     ReflectionTrace.TypeInfo_DeclaredNestedTypes(this);
+#endif
 
                 foreach (TypeDefinitionHandle nestedTypeHandle in _typeDefinition.NestedTypes)
                 {

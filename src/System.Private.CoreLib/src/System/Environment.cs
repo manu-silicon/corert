@@ -21,7 +21,6 @@ using Microsoft.Win32;
 using System.Runtime.CompilerServices;
 using System.Threading;
 using Internal.DeveloperExperience;
-using Internal.Runtime.CompilerHelpers;
 
 namespace System
 {
@@ -120,7 +119,9 @@ namespace System
 #endif
 
 #if CORERT
-        // Moved to startup sequence in StartupCodeHelpers.Initialize().
+        // .NET Core abandoned shutdown finalization.
+        // See discussion in https://github.com/dotnet/corefx/issues/5205
+        // We should get rid of this in Project N too.
 #else
         static Environment()
         {

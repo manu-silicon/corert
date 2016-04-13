@@ -2,16 +2,18 @@
 // The .NET Foundation licenses this file to you under the MIT license.
 // See the LICENSE file in the project root for more information.
 
+using System;
+
 namespace ILCompiler.DependencyAnalysis
 {
     public class BlobNode : ObjectNode, ISymbolNode
     {
         private string _name;
-        private string _section;
+        private ObjectNodeSection _section;
         private byte[] _data;
         private int _alignment;
 
-        public BlobNode(string name, string section, byte[] data, int alignment)
+        public BlobNode(string name, ObjectNodeSection section, byte[] data, int alignment)
         {
             _name = name;
             _section = section;
@@ -19,7 +21,7 @@ namespace ILCompiler.DependencyAnalysis
             _alignment = alignment;
         }
 
-        public override string Section
+        public override ObjectNodeSection Section
         {
             get
             {
@@ -53,7 +55,7 @@ namespace ILCompiler.DependencyAnalysis
 
         public override ObjectData GetData(NodeFactory factory, bool relocsOnly = false)
         {
-            return new ObjectData(_data, null, _alignment, new ISymbolNode[] { this });
+            return new ObjectData(_data, Array.Empty<Relocation>(), _alignment, new ISymbolNode[] { this });
         }
 
         public override string GetName()

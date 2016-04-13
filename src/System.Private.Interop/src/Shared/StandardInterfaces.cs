@@ -23,7 +23,8 @@
 
 namespace System.Runtime.InteropServices
 {
-    unsafe struct __com_IUnknown
+    [CLSCompliant(false)]
+    public unsafe struct __com_IUnknown
     {
 #pragma warning disable 649 // Field 'blah' is never assigned to, and will always have its default value null
         internal __vtable_IUnknown* pVtable;
@@ -206,7 +207,8 @@ namespace System.Runtime.InteropServices
         }
     }
 
-    unsafe struct __com_IInspectable
+    [CLSCompliant(false)]
+    public unsafe struct __com_IInspectable
     {
 #pragma warning disable 649 // Field 'blah' is never assigned to, and will always have its default value null
         public __vtable_IInspectable* pVtable;
@@ -325,6 +327,11 @@ namespace System.Runtime.InteropServices
             __interface_ccw* pComThis = (__interface_ccw*)__IntPtr__pComThis;
             HSTRING* pClassName = (HSTRING*)__IntPtr__className;
 
+            if (pClassName == null)
+            {
+                return Interop.COM.E_POINTER;
+            }
+
             CCWTemplateInfo template = pComThis->ComCallableObject.Template;
 
             if (!template.IsNull)
@@ -357,13 +364,125 @@ namespace System.Runtime.InteropServices
             __interface_ccw* pComThis = (__interface_ccw*)__IntPtr__pComThis;
             int* pTrustLevel = (int*)__IntPtr__pTrustLevel;
 
+            if (pTrustLevel == null)
+            {
+                return Interop.COM.E_POINTER;
+            }
+
             *pTrustLevel = BaseTrust;
 
             return S_OK;
         }
     }
 
+    [CLSCompliant(false)]
+    public unsafe struct __com_IDispatch
+    {
+#pragma warning disable 649 // Field 'blah' is never assigned to, and will always have its default value null
+        internal __vtable_IDispatch* pVtable;
+#pragma warning restore 649
+    }
+
+    [EditorBrowsable(EditorBrowsableState.Never)]
+    [CLSCompliant(false)]
+    public unsafe struct __vtable_IDispatch
+    {
+        // IUnknown
+        internal IntPtr pfnQueryInterface;
+        internal IntPtr pfnAddRef;
+        internal IntPtr pfnRelease;
+
+        // IDispatch
+        internal IntPtr pfnGetTypeInfoCount;
+        internal IntPtr pfnGetTypeInfo;
+        internal IntPtr pfnGetIDsOfNames;
+        internal IntPtr pfnInvoke;
+
+        public static IntPtr pNativeVtable;
+        private static __vtable_IDispatch s_theCcwVtable = new __vtable_IDispatch
+        {
+            // IUnknown
+            pfnQueryInterface = AddrOfIntrinsics.AddrOf<AddrOfQueryInterface>(__vtable_IUnknown.QueryInterface),
+            pfnAddRef = AddrOfIntrinsics.AddrOf<AddrOfAddRef>(__vtable_IUnknown.AddRef),
+            pfnRelease = AddrOfIntrinsics.AddrOf<AddrOfRelease>(__vtable_IUnknown.Release),
+            // IDispatch
+            pfnGetTypeInfoCount = AddrOfIntrinsics.AddrOf<AddrOfIntrinsics.AddrOfTarget3>(GetTypeInfoCount),
+            pfnGetTypeInfo = AddrOfIntrinsics.AddrOf<AddrOfIntrinsics.AddrOfGetTypeInfo>(GetTypeInfo),
+            pfnGetIDsOfNames = AddrOfIntrinsics.AddrOf<AddrOfIntrinsics.AddrOfGetIDsOfNames>(GetIDsOfNames),
+            pfnInvoke = AddrOfIntrinsics.AddrOf<AddrOfIntrinsics.AddrOfInvoke>(Invoke),
+        };
+        internal static IntPtr GetVtableFuncPtr()
+        {
+            return AddrOfIntrinsics.AddrOf<AddrOfGetCCWVtable>(GetCcwvtable_IDispatch);
+        }
+        internal static unsafe IntPtr GetCcwvtable_IDispatch()
+        {
+            if (pNativeVtable == default(IntPtr))
+            {
+                fixed (void* pVtbl = &s_theCcwVtable)
+                {
+                    McgMarshal.GetCCWVTableCopy(pVtbl, ref __vtable_IDispatch.pNativeVtable, sizeof(__vtable_IDispatch));
+                }
+            }
+            return __vtable_IDispatch.pNativeVtable;
+        }
+
+        const int E_NOTIMPL = unchecked((int)0x80000001);
+
+        [NativeCallable]
+        public static int GetTypeInfoCount(
+            IntPtr pComThis, 
+            IntPtr pctinfo)
+        {
+            return E_NOTIMPL;
+        }
+
+        [NativeCallable]
+        public static int GetTypeInfo(
+            IntPtr pComThis,
+            uint iTInfo,
+            uint lcid,
+            IntPtr ppTInfo)
+        {
+            return E_NOTIMPL;
+        }
+
+        [NativeCallable]
+        public static int GetIDsOfNames(
+            IntPtr pComThis,
+            IntPtr riid,
+            IntPtr rgszNames,
+            uint cNames,
+            uint lcid,
+            IntPtr rgDispId)
+        {
+            return E_NOTIMPL;
+        }
+
+        [NativeCallable]
+        public static int Invoke(
+            IntPtr pComThis,
+            int dispIdMember,
+            IntPtr riid,
+            uint lcid,
+            ushort wFlags,
+            IntPtr pDispParams,
+            IntPtr pVarResult,
+            IntPtr pExcepInfo,
+            IntPtr puArgErr)
+        {
+            return E_NOTIMPL;
+        }
+    }
+
 #if ENABLE_WINRT
+    internal unsafe struct __com_ICustomPropertyProvider
+    {
+#pragma warning disable 649 // Field 'blah' is never assigned to, and will always have its default value null
+        public __vtable_ICustomPropertyProvider* pVtable;
+#pragma warning restore 649
+    }
+
     internal unsafe struct __vtable_ICustomPropertyProvider
     {
         // The ICustomProperty interop implementation is generated by MCG so we need the
@@ -459,7 +578,7 @@ namespace System.Runtime.InteropServices
                     propertyName);
 
                 if (propertyInfo != null)
-                    return new CustomPropertyImpl(propertyInfo);
+                    return new CustomPropertyImpl(propertyInfo, supportIndexerWithoutMetadata : false);
 
                 // Weakly-Typed RCW scenario
                 // Check cached interface to see whether it supports propertyName Property
@@ -470,7 +589,7 @@ namespace System.Runtime.InteropServices
                         (PropertyInfo p) => { if (p.Name == propertyName) return true; return false; }
                     );
                     if (propertyInfo != null)
-                        return new CustomPropertyImpl(propertyInfo);
+                        return new CustomPropertyImpl(propertyInfo, supportIndexerWithoutMetadata : false);
                 }
             }
             catch (MissingMetadataException ex)
@@ -550,13 +669,16 @@ namespace System.Runtime.InteropServices
         {
             target = CustomPropertyImpl.UnwrapTarget(target);
 
+            // We can do indexing on lists and dictionaries without metadata as a fallback
+            bool supportIndexerWithoutMetadata = (target is IList || target is IDictionary);
+
             try
             {
                 foreach (PropertyInfo property in target.GetType().GetRuntimeProperties())
                 {
                     if (IsMatchingIndexedProperty(property, propertyName, indexerType))
                     {
-                        return new CustomPropertyImpl(property);
+                        return new CustomPropertyImpl(property, supportIndexerWithoutMetadata);
                     }
                 }
 
@@ -571,7 +693,7 @@ namespace System.Runtime.InteropServices
 
                     if (property != null)
                     {
-                        return new CustomPropertyImpl(property);
+                        return new CustomPropertyImpl(property, supportIndexerWithoutMetadata);
                     }
                 }
             }
@@ -579,13 +701,12 @@ namespace System.Runtime.InteropServices
             {
                 CustomPropertyImpl.LogDataBindingError(propertyName, ex);
             }
-
-            // We can do indexing on lists and dictionaries without metadata
-            if (target is IList || target is IDictionary)
+           
+            if (supportIndexerWithoutMetadata)
             {
-                return new CustomPropertyImpl(null, true, target.GetType());
+                return new CustomPropertyImpl(null, supportIndexerWithoutMetadata, target.GetType());
             }
-
+            
             return null;
         }
 
@@ -670,11 +791,11 @@ namespace System.Runtime.InteropServices
     }
 #endif //ENABLE_WINRT
 
-    /// <summary>
-    /// This is a special type we'll create CCW for but does not implement any WinRT interfaces
-    /// We need to ask MCG to generate templates for it explicitly by marking with McgComCallableAttribute
-    /// </summary>
-    [McgComCallableAttribute]
+            /// <summary>
+            /// This is a special type we'll create CCW for but does not implement any WinRT interfaces
+            /// We need to ask MCG to generate templates for it explicitly by marking with McgComCallableAttribute
+            /// </summary>
+        [McgComCallableAttribute]
     internal class StandardCustomPropertyProviderProxy : IManagedWrapper
     {
         Object m_target;
@@ -846,10 +967,10 @@ namespace System.Runtime.InteropServices
         }
     }
 
-    internal unsafe struct __com_IWeakReference
+    internal unsafe struct __com_IWeakReferenceSource
     {
 #pragma warning disable 649 // Field 'blah' is never assigned to, and will always have its default value null
-        internal __vtable_IWeakReference* pVtable;
+        internal __vtable_IWeakReferenceSource* pVtable;
 #pragma warning restore 649
     }
 
@@ -909,6 +1030,13 @@ namespace System.Runtime.InteropServices
 
             return Interop.COM.S_OK;
         }
+    }
+
+    internal unsafe struct __com_IWeakReference
+    {
+#pragma warning disable 649 // Field 'blah' is never assigned to, and will always have its default value null
+        internal __vtable_IWeakReference* pVtable;
+#pragma warning restore 649
     }
 
     [EditorBrowsable(EditorBrowsableState.Never)]
@@ -1320,6 +1448,14 @@ namespace System.Runtime.InteropServices
     }
 #endif
 
+
+    unsafe struct __com_IManagedActivationFactory
+    {
+#pragma warning disable 649 // Field 'blah' is never assigned to, and will always have its default value null
+        internal __vtable_IManagedActivationFactory* pVtable;
+#pragma warning restore 649
+    }
+
     internal unsafe struct __vtable_IManagedActivationFactory
     {
         // IUnknown
@@ -1378,6 +1514,13 @@ namespace System.Runtime.InteropServices
                 return McgMarshal.GetHRForExceptionWinRT(hrExcep);
             }
         }
+    }
+
+    unsafe struct __com_IMarshal
+    {
+#pragma warning disable 649 // Field 'blah' is never assigned to, and will always have its default value null
+        internal __vtable_IMarshal* pVtable;
+#pragma warning restore 649
     }
 
     /// <summary>
@@ -1858,7 +2001,7 @@ namespace System.Runtime.InteropServices
         internal static unsafe int Seek(System.IntPtr pComThis, long dlibMove, int dwOrigin, IntPtr plib)
         {
             __com_IStream* pIStream = (__com_IStream*)pComThis;
-            int* plibNewPosition = (int*)plib;
+            long* plibNewPosition = (long*)plib;
             Debug.Assert(dwOrigin == (int)Interop.COM.STREAM_SEEK.STREAM_SEEK_SET ||
                 dwOrigin == (int)Interop.COM.STREAM_SEEK.STREAM_SEEK_CUR);
             Debug.Assert(dlibMove >= 0);
@@ -1930,5 +2073,36 @@ namespace System.Runtime.InteropServices
             return Interop.COM.E_NOTIMPL;
         }
         #endregion
+    }
+
+    /// The main puropse of this type is making McgIR happy
+    /// The problem to solve is to generate "IUriRuntimeClass" McgData into shared assembly in production build.
+    /// In Mcg, there is a place to determine which CompilationUnit(assembly) for a type should go to.
+    /// Related Code: MCG.CompilationUnitCollection[ReportInteropTypeAndComputeDestination(typeDef)].IRCollection.Add(type);
+    /// Solution 1: Use Windows.Foundation.IUriRuntimeClass type as typedef
+    /// By default, the destination for a Windows.* WinRT type will be App CompilationUnit unless Windows.* WinRT type is shared type.
+    /// Since marking Windows.Foundation.IUriRuntimeClass as shared type, it will introduce Windows.Foundation.WwwFormUrlDecoder as shared type and
+    /// in reality, we don't care Windows.Foundation.WwwFormUrlDecoder.
+    /// 
+    /// [Current]Solution2: Use a WellKnown type(System.Runtime.InteropServices.IUriRuntimeClass) as typedef
+    /// By default, the destination for a type in system.private.interop will be shared CompilationUnit.
+    [Guid("9e365e57-48b2-4160-956f-c7385120bbfc")]
+    public interface IUriRuntimeClass
+    {
+    }
+
+    // The main puropse of this type is making McgIR happy during TypeImporter.ImporWinRTUri
+    /// The problem to solve is to generate "IUriRuntimeClassFactory" McgData into shared assembly in production build
+    /// In Mcg, there is a place to determine which CompilationUnit(assembly) for a type should go to.
+    /// Related Code: MCG.CompilationUnitCollection[ReportInteropTypeAndComputeDestination(typeDef)].IRCollection.Add(type);
+    /// Solution 1: Use Windows.Foundation.IUriRuntimeClassFactory type as typedef
+    /// By default, the destination for a Windows.* WinRT type will be App CompilationUnit unless Windows.* WinRT type is shared type.
+    /// Since marking Windows.Foundation.IUriRuntimeClassFactory as shared type, it will introduce Windows.Foundation.Uri as shared type 
+    /// 
+    /// [Current]Solution2: Use a WellKnown type(System.Runtime.InteropServices.IUriRuntimeClassFactory) as typedef
+    /// By default, the destination for a type in system.private.interop will be shared CompilationUnit.
+    [Guid("44a9796f-723e-4fdf-a218-033e75b0c084")]
+    public interface IUriRuntimeClassFactory
+    {
     }
 }

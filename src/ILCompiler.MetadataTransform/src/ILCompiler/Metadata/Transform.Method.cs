@@ -10,44 +10,51 @@ using Internal.Metadata.NativeFormat.Writer;
 using Cts = Internal.TypeSystem;
 using Ecma = System.Reflection.Metadata;
 
+using CallingConventions = System.Reflection.CallingConventions;
 using Debug = System.Diagnostics.Debug;
 using MethodAttributes = System.Reflection.MethodAttributes;
 using MethodImplAttributes = System.Reflection.MethodImplAttributes;
 
 namespace ILCompiler.Metadata
 {
-    public partial class Transform<TPolicy>
+    partial class Transform<TPolicy>
     {
-        private EntityMap<Cts.MethodDesc, MetadataRecord> _methods
+        internal EntityMap<Cts.MethodDesc, MetadataRecord> _methods
             = new EntityMap<Cts.MethodDesc, MetadataRecord>(EqualityComparer<Cts.MethodDesc>.Default);
 
         private Action<Cts.MethodDesc, Method> _initMethodDef;
         private Action<Cts.MethodDesc, MemberReference> _initMethodRef;
+        private Action<Cts.MethodDesc, MethodInstantiation> _initMethodInst;
 
-        private MetadataRecord HandleMethod(Cts.MethodDesc method)
+        public override MetadataRecord HandleQualifiedMethod(Cts.MethodDesc method)
         {
-            // TODO: MethodSpecs
-            Debug.Assert(method.IsTypicalMethodDefinition);
-
             MetadataRecord rec;
 
-            if (_policy.GeneratesMetadata(method))
+            if (method is Cts.InstantiatedMethod)
             {
-                rec = HandleMethodDefinition(method);
+                rec = HandleMethodInstantiation(method);
+            }
+            else if (method.IsTypicalMethodDefinition && _policy.GeneratesMetadata(method))
+            {
+                rec = new QualifiedMethod
+                {
+                    EnclosingType = (TypeDefinition)HandleType(method.OwningType),
+                    Method = HandleMethodDefinition(method),
+                };
             }
             else
             {
-                rec = _methods.GetOrCreate(method, _initMethodRef ?? (_initMethodRef = InitializeMethodReference));
+                rec = HandleMethodReference(method);
             }
 
-            Debug.Assert(rec is Method || rec is MemberReference);
+            Debug.Assert(rec is QualifiedMethod || rec is MemberReference || rec is MethodInstantiation);
 
             return rec;
         }
 
         private Method HandleMethodDefinition(Cts.MethodDesc method)
         {
-            Debug.Assert(method.IsMethodDefinition);
+            Debug.Assert(method.IsTypicalMethodDefinition);
             Debug.Assert(_policy.GeneratesMetadata(method));
             return (Method)_methods.GetOrCreate(method, _initMethodDef ?? (_initMethodDef = InitializeMethodDefinition));
         }
@@ -59,85 +66,98 @@ namespace ILCompiler.Metadata
 
             if (entity.HasInstantiation)
             {
-                var genericParams = new List<GenericParameter>(entity.Instantiation.Length);
+                record.GenericParameters.Capacity = entity.Instantiation.Length;
                 foreach (var p in entity.Instantiation)
-                    genericParams.Add(HandleGenericParameter((Cts.GenericParameterDesc)p));
-                record.GenericParameters = genericParams;
+                    record.GenericParameters.Add(HandleGenericParameter((Cts.GenericParameterDesc)p));
             }
 
-            if (entity.Signature.Length > 0)
+            var ecmaEntity = entity as Cts.Ecma.EcmaMethod;
+            if (ecmaEntity != null)
             {
-                List<Parameter> parameters = new List<Parameter>(entity.Signature.Length);
-                for (ushort i = 0; i < entity.Signature.Length; i++)
+                Ecma.MetadataReader reader = ecmaEntity.MetadataReader;
+                Ecma.MethodDefinition methodDef = reader.GetMethodDefinition(ecmaEntity.Handle);
+                Ecma.ParameterHandleCollection paramHandles = methodDef.GetParameters();
+
+                record.Parameters.Capacity = paramHandles.Count;
+                foreach (var paramHandle in paramHandles)
                 {
-                    parameters.Add(new Parameter
+                    Ecma.Parameter param = reader.GetParameter(paramHandle);
+                    Parameter paramRecord = new Parameter
                     {
-                        Sequence = i
-                    });
-                }
-
-                var ecmaEntity = entity as Cts.Ecma.EcmaMethod;
-                if (ecmaEntity != null)
-                {
-                    Ecma.MetadataReader reader = ecmaEntity.MetadataReader;
-                    Ecma.MethodDefinition methodDef = reader.GetMethodDefinition(ecmaEntity.Handle);
-                    Ecma.ParameterHandleCollection paramHandles = methodDef.GetParameters();
-
-                    Debug.Assert(paramHandles.Count == entity.Signature.Length);
-
-                    int i = 0;
-                    foreach (var paramHandle in paramHandles)
+                        Flags = param.Attributes,
+                        Name = HandleString(reader.GetString(param.Name)),
+                        Sequence = checked((ushort)param.SequenceNumber)
+                    };
+                    
+                    Ecma.ConstantHandle defaultValue = param.GetDefaultValue();
+                    if (!defaultValue.IsNil)
                     {
-                        Ecma.Parameter param = reader.GetParameter(paramHandle);
-                        parameters[i].Flags = param.Attributes;
-                        parameters[i].Name = HandleString(reader.GetString(param.Name));
-                        
-                        // TODO: CustomAttributes
-                        // TODO: DefaultValue
-
-                        i++;
+                        paramRecord.DefaultValue = HandleConstant(ecmaEntity.Module, defaultValue);
                     }
+
+                    Ecma.CustomAttributeHandleCollection paramAttributes = param.GetCustomAttributes();
+                    if (paramAttributes.Count > 0)
+                    {
+                        paramRecord.CustomAttributes = HandleCustomAttributes(ecmaEntity.Module, paramAttributes);
+                    }
+
+                    record.Parameters.Add(paramRecord);
                 }
 
-                record.Parameters = parameters;
+                Ecma.CustomAttributeHandleCollection attributes = methodDef.GetCustomAttributes();
+                if (attributes.Count > 0)
+                {
+                    record.CustomAttributes = HandleCustomAttributes(ecmaEntity.Module, attributes);
+                }
+            }
+            else
+            {
+                throw new NotImplementedException();
             }
 
             record.Flags = GetMethodAttributes(entity);
             record.ImplFlags = GetMethodImplAttributes(entity);
             
-            //TODO: MethodImpls
             //TODO: RVA
-            //TODO: CustomAttributes
+        }
+
+        private MemberReference HandleMethodReference(Cts.MethodDesc method)
+        {
+            Debug.Assert(method.IsMethodDefinition);
+            return (MemberReference)_methods.GetOrCreate(method, _initMethodRef ?? (_initMethodRef = InitializeMethodReference));
         }
 
         private void InitializeMethodReference(Cts.MethodDesc entity, MemberReference record)
         {
             record.Name = HandleString(entity.Name);
             record.Parent = HandleType(entity.OwningType);
-            record.Signature = HandleMethodSignature(entity.Signature);
+            record.Signature = HandleMethodSignature(entity.GetTypicalMethodDefinition().Signature);
         }
 
-        private MethodSignature HandleMethodSignature(Cts.MethodSignature signature)
+        private MethodInstantiation HandleMethodInstantiation(Cts.MethodDesc method)
         {
-            List<ParameterTypeSignature> parameters;
-            if (signature.Length > 0)
+            return (MethodInstantiation)_methods.GetOrCreate(method, _initMethodInst ?? (_initMethodInst = InitializeMethodInstantiation));
+        }
+
+        private void InitializeMethodInstantiation(Cts.MethodDesc entity, MethodInstantiation record)
+        {
+            Cts.InstantiatedMethod instantiation = (Cts.InstantiatedMethod)entity;
+            record.Method = HandleQualifiedMethod(instantiation.GetMethodDefinition());
+            record.GenericTypeArguments.Capacity = instantiation.Instantiation.Length;
+            foreach (Cts.TypeDesc typeArgument in instantiation.Instantiation)
             {
-                parameters = new List<ParameterTypeSignature>(signature.Length);
-                for (int i = 0; i < signature.Length; i++)
-                {
-                    parameters.Add(HandleParameterTypeSignature(signature[i]));
-                }
+                record.GenericTypeArguments.Add(HandleType(typeArgument));
             }
-            else
+        }
+
+        public override MethodSignature HandleMethodSignature(Cts.MethodSignature signature)
+        {
+            // TODO: if Cts.MethodSignature implements Equals/GetHashCode, we could enable pooling here.
+
+            var result = new MethodSignature
             {
-                parameters = null;
-            }
-            
-            return new MethodSignature
-            {
-                // TODO: CallingConvention
+                CallingConvention = GetSignatureCallingConvention(signature),
                 GenericParameterCount = signature.GenericParameterCount,
-                Parameters = parameters,
                 ReturnType = new ReturnTypeSignature
                 {
                     // TODO: CustomModifiers
@@ -145,6 +165,14 @@ namespace ILCompiler.Metadata
                 },
                 // TODO-NICE: VarArgParameters
             };
+
+            result.Parameters.Capacity = signature.Length;
+            for (int i = 0; i < signature.Length; i++)
+            {
+                result.Parameters.Add(HandleParameterTypeSignature(signature[i]));
+            }
+
+            return result;
         }
 
         private MethodAttributes GetMethodAttributes(Cts.MethodDesc method)
@@ -171,6 +199,17 @@ namespace ILCompiler.Metadata
             }
             else
                 throw new NotImplementedException();
+        }
+
+        private CallingConventions GetSignatureCallingConvention(Cts.MethodSignature signature)
+        {
+            CallingConventions callingConvention = CallingConventions.Standard;
+            if ((signature.Flags & Cts.MethodSignatureFlags.Static) == 0)
+            {
+                callingConvention = CallingConventions.HasThis;
+            }
+            // TODO: additional calling convention flags like stdcall / cdecl etc.
+            return callingConvention;
         }
     }
 }

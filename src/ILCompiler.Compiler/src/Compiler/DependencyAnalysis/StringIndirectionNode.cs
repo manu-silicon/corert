@@ -4,7 +4,7 @@
 
 using System;
 using System.Collections.Generic;
-using System.Globalization;
+
 using ILCompiler.DependencyAnalysisFramework;
 
 namespace ILCompiler.DependencyAnalysis
@@ -15,7 +15,6 @@ namespace ILCompiler.DependencyAnalysis
 
         public StringIndirectionNode(string data)
         {
-            base.Offset = 1; // 1 is not a valid offset, so when the wrapper object emitter sets offsets, it will become more reasonable
             _data = data;
         }
 
@@ -31,18 +30,7 @@ namespace ILCompiler.DependencyAnalysis
         {
             get
             {
-                if (base.Offset != 1)
-                    return NodeFactory.NameMangler.CompilationUnitPrefix + "__str" + base.Offset.ToString(CultureInfo.InvariantCulture);
-                else
-                    return NodeFactory.NameMangler.CompilationUnitPrefix + "__str" + _data;
-            }
-        }
-
-        int ISymbolNode.Offset
-        {
-            get
-            {
-                return base.Offset;
+                return NodeFactory.NameMangler.CompilationUnitPrefix + "__str" + Offset.ToStringInvariant();
             }
         }
 
@@ -62,14 +50,14 @@ namespace ILCompiler.DependencyAnalysis
             return ((ISymbolNode)this).MangledName;
         }
 
-        public override IEnumerable<DependencyListEntry> GetStaticDependencies(NodeFactory context)
+        public override IEnumerable<DependencyListEntry> GetStaticDependencies(NodeFactory factory)
         {
-            return new DependencyListEntry[] { new DependencyListEntry(context.StringData(_data), "string contents") };
+            return new DependencyListEntry[] { new DependencyListEntry(factory.StringData(_data), "string contents") };
         }
 
-        protected override void OnMarked(NodeFactory context)
+        protected override void OnMarked(NodeFactory factory)
         {
-            context.StringTable.AddEmbeddedObject(this);
+            factory.StringTable.AddEmbeddedObject(this);
         }
     }
 }

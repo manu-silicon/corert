@@ -19,46 +19,14 @@ using Internal.IL;
 
 namespace ILCompiler
 {
-    public class CompilerTypeSystemContext : TypeSystemContext, IMetadataStringDecoderProvider
+    public class CompilerTypeSystemContext : MetadataTypeSystemContext, IMetadataStringDecoderProvider
     {
-        private static readonly string[] s_wellKnownTypeNames = new string[] {
-            "Void",
-            "Boolean",
-            "Char",
-            "SByte",
-            "Byte",
-            "Int16",
-            "UInt16",
-            "Int32",
-            "UInt32",
-            "Int64",
-            "UInt64",
-            "IntPtr",
-            "UIntPtr",
-            "Single",
-            "Double",
-
-            "ValueType",
-            "Enum",
-            "Nullable`1",
-
-            "Object",
-            "String",
-            "Array",
-            "MulticastDelegate",
-
-            "RuntimeTypeHandle",
-            "RuntimeMethodHandle",
-            "RuntimeFieldHandle",
-
-            "Exception",
-        };
-
-        private MetadataType[] _wellKnownTypes = new MetadataType[s_wellKnownTypeNames.Length];
-
         private MetadataFieldLayoutAlgorithm _metadataFieldLayoutAlgorithm = new CompilerMetadataFieldLayoutAlgorithm();
         private MetadataRuntimeInterfacesAlgorithm _metadataRuntimeInterfacesAlgorithm = new MetadataRuntimeInterfacesAlgorithm();
         private ArrayOfTRuntimeInterfacesAlgorithm _arrayOfTRuntimeInterfacesAlgorithm;
+        private MetadataVirtualMethodAlgorithm _virtualMethodAlgorithm = new MetadataVirtualMethodAlgorithm();
+        private MetadataVirtualMethodEnumerationAlgorithm _virtualMethodEnumAlgorithm = new MetadataVirtualMethodEnumerationAlgorithm();
+        private DelegateVirtualMethodEnumerationAlgorithm _delegateVirtualMethodEnumAlgorithm = new DelegateVirtualMethodEnumerationAlgorithm();
 
         private MetadataStringDecoder _metadataStringDecoder;
 
@@ -130,6 +98,31 @@ namespace ILCompiler
         }
         private SimpleNameHashtable _simpleNameHashtable = new SimpleNameHashtable();
 
+        private class DelegateInfoHashtable : LockFreeReaderHashtable<TypeDesc, DelegateInfo>
+        {
+            protected override int GetKeyHashCode(TypeDesc key)
+            {
+                return key.GetHashCode();
+            }
+            protected override int GetValueHashCode(DelegateInfo value)
+            {
+                return value.Type.GetHashCode();
+            }
+            protected override bool CompareKeyToValue(TypeDesc key, DelegateInfo value)
+            {
+                return Object.ReferenceEquals(key, value.Type);
+            }
+            protected override bool CompareValueToValue(DelegateInfo value1, DelegateInfo value2)
+            {
+                return Object.ReferenceEquals(value1.Type, value2.Type);
+            }
+            protected override DelegateInfo CreateValueFromKey(TypeDesc key)
+            {
+                return new DelegateInfo(key);
+            }
+        }
+        private DelegateInfoHashtable _delegateInfoHashtable = new DelegateInfoHashtable();
+
         public CompilerTypeSystemContext(TargetDetails details)
             : base(details)
         {
@@ -155,27 +148,6 @@ namespace ILCompiler
         {
             get;
             set;
-        }
-
-        public void SetSystemModule(ModuleDesc systemModule)
-        {
-            InitializeSystemModule(systemModule);
-
-            // Sanity check the name table
-            Debug.Assert(s_wellKnownTypeNames[(int)WellKnownType.MulticastDelegate - 1] == "MulticastDelegate");
-
-            // Initialize all well known types - it will save us from checking the name for each loaded type
-            for (int typeIndex = 0; typeIndex < _wellKnownTypes.Length; typeIndex++)
-            {
-                MetadataType type = systemModule.GetKnownType("System", s_wellKnownTypeNames[typeIndex]);
-                type.SetWellKnownType((WellKnownType)(typeIndex + 1));
-                _wellKnownTypes[typeIndex] = type;
-            }
-        }
-
-        public override DefType GetWellKnownType(WellKnownType wellKnownType)
-        {
-            return _wellKnownTypes[(int)wellKnownType - 1];
         }
 
         public override ModuleDesc ResolveAssembly(System.Reflection.AssemblyName name, bool throwIfNotFoundOrAmbiguous = true)
@@ -319,12 +291,15 @@ namespace ILCompiler
             // well for us since it can make IL access very slow (call to OS for each method IL query). We will map the file
             // ourselves to get the desired performance characteristics reliably.
 
+            FileStream fileStream = null;
             MemoryMappedFile mappedFile = null;
             MemoryMappedViewAccessor accessor = null;
-
             try
             {
-                mappedFile = MemoryMappedFile.CreateFromFile(filePath, FileMode.Open, null, 0, MemoryMappedFileAccess.Read);
+                // Create stream because CreateFromFile(string, ...) uses FileShare.None which is too strict
+                fileStream = new FileStream(filePath, FileMode.Open, FileAccess.Read, FileShare.Read, 4096, false);
+                mappedFile = MemoryMappedFile.CreateFromFile(
+                    fileStream, null, fileStream.Length, MemoryMappedFileAccess.Read, HandleInheritability.None, true);
                 accessor = mappedFile.CreateViewAccessor(0, 0, MemoryMappedFileAccess.Read);
 
                 var safeBuffer = accessor.SafeMemoryMappedViewHandle;
@@ -343,6 +318,8 @@ namespace ILCompiler
                     accessor.Dispose();
                 if (mappedFile != null)
                     mappedFile.Dispose();
+                if (fileStream != null)
+                    fileStream.Dispose();
             }
         }
 
@@ -412,12 +389,17 @@ namespace ILCompiler
             }
         }
 
+        public DelegateInfo GetDelegateInfo(TypeDesc delegateType)
+        {
+            return _delegateInfoHashtable.GetOrCreateValue(delegateType);
+        }
+
         public override FieldLayoutAlgorithm GetLayoutAlgorithmForType(DefType type)
         {
             return _metadataFieldLayoutAlgorithm;
         }
 
-        public override RuntimeInterfacesAlgorithm GetRuntimeInterfacesAlgorithmForNonPointerArrayType(ArrayType type)
+        protected override RuntimeInterfacesAlgorithm GetRuntimeInterfacesAlgorithmForNonPointerArrayType(ArrayType type)
         {
             if (_arrayOfTRuntimeInterfacesAlgorithm == null)
             {
@@ -426,9 +408,26 @@ namespace ILCompiler
             return _arrayOfTRuntimeInterfacesAlgorithm;
         }
 
-        public override RuntimeInterfacesAlgorithm GetRuntimeInterfacesAlgorithmForMetadataType(MetadataType type)
+        protected override RuntimeInterfacesAlgorithm GetRuntimeInterfacesAlgorithmForDefType(DefType type)
         {
             return _metadataRuntimeInterfacesAlgorithm;
+        }
+
+        public override VirtualMethodAlgorithm GetVirtualMethodAlgorithmForType(TypeDesc type)
+        {
+            Debug.Assert(!type.IsArray, "Wanted to call GetClosestMetadataType?");
+
+            return _virtualMethodAlgorithm;
+        }
+
+        public override VirtualMethodEnumerationAlgorithm GetVirtualMethodEnumerationAlgorithmForType(TypeDesc type)
+        {
+            Debug.Assert(!type.IsArray, "Wanted to call GetClosestMetadataType?");
+
+            if (type.IsDelegate)
+                return _delegateVirtualMethodEnumAlgorithm;
+
+            return _virtualMethodEnumAlgorithm;
         }
 
         public MetadataStringDecoder GetMetadataStringDecoder()

@@ -39,6 +39,9 @@
     #define FireEtwGCTriggered(Reason, ClrInstanceID) 0
 
     #ifndef _INC_WINDOWS
+        typedef void* LPVOID;
+        typedef uint32_t UINT;
+        typedef void* PVOID;
         typedef uint64_t ULONGLONG;
         typedef uint32_t ULONG;
         typedef int64_t LONGLONG;
@@ -171,7 +174,13 @@ public:
     int     GetGCtraceFac  ()               const { return 0; }
     int     GetGCprnLvl    ()               const { return 0; }
     bool    IsGCBreakOnOOMEnabled()         const { return false; }
+#ifdef CORERT
+    // CORERT-TODO: remove this
+    //              https://github.com/dotnet/corert/issues/913
+    int     GetGCgen0size  ()               const { return 100 * 1024 * 1024; }
+#else
     int     GetGCgen0size  ()               const { return 0; }
+#endif
     void    SetGCgen0size  (int iSize)            { UNREFERENCED_PARAMETER(iSize); }
     int     GetSegmentSize ()               const { return 0; }
     void    SetSegmentSize (int iSize)            { UNREFERENCED_PARAMETER(iSize); }

@@ -34,6 +34,8 @@ namespace ILCompiler.DependencyAnalysis
     ///                 |
     /// UInt32          | Hash code
     ///                 |
+    /// [Pointer Size]  | Pointer to containing Module indirection cell
+    ///                 |
     /// X * [Ptr Size]  | VTable entries (optional)
     ///                 |
     /// Y * [Ptr Size]  | Pointers to interface map data structures (optional)
@@ -93,15 +95,20 @@ namespace ILCompiler.DependencyAnalysis
             get { return _constructed; }
         }
 
-        public override string Section
+        public override ObjectNodeSection Section
         {
             get
             {
                 if (_type.Context.Target.IsWindows)
-                    return "rdata";
+                    return ObjectNodeSection.ReadOnlyDataSection;
                 else
-                    return "data";
+                    return ObjectNodeSection.DataSection;
             }
+        }
+
+        public override bool ShouldShareNodeAcrossModules(NodeFactory factory)
+        {
+            return factory.CompilationModuleGroup.ShouldShareAcrossModules(_type);
         }
 
         public override bool StaticDependenciesAreComputed
@@ -112,9 +119,9 @@ namespace ILCompiler.DependencyAnalysis
             }
         }
 
-        public void SetDispatchMapIndex(uint index)
+        public void SetDispatchMapIndex(int index)
         {
-            _optionalFieldsBuilder.SetFieldValue(EETypeOptionalFieldsElement.DispatchMap, index);
+            _optionalFieldsBuilder.SetFieldValue(EETypeOptionalFieldsElement.DispatchMap, checked((uint)index));
         }
 
         int ISymbolNode.Offset
@@ -153,13 +160,24 @@ namespace ILCompiler.DependencyAnalysis
             OutputFlags(factory, ref objData);
             OutputBaseSize(ref objData);
             OutputRelatedType(factory, ref objData);
-            OutputVirtualSlotAndInterfaceCount(factory, ref objData);
+
+            // Avoid consulting VTable slots until they're guaranteed complete during final data emission
+            if (!relocsOnly)
+            {
+                OutputVirtualSlotAndInterfaceCount(factory, ref objData);
+            }
 
             objData.EmitInt(_type.GetHashCode());
+            objData.EmitPointerReloc(factory.ModuleManagerIndirection);
 
             if (_constructed)
             {
-                OutputVirtualSlots(factory, ref objData, _type, _type);
+                // Avoid consulting VTable slots until they're guaranteed complete during final data emission
+                if (!relocsOnly)
+                {
+                    OutputVirtualSlots(factory, ref objData, _type, _type);
+                }
+
                 OutputInterfaceMap(factory, ref objData);
             }
 
@@ -172,14 +190,27 @@ namespace ILCompiler.DependencyAnalysis
 
         protected override DependencyList ComputeNonRelocationBasedDependencies(NodeFactory factory)
         {
-            DependencyList dependencyList = new DependencyNodeCore<NodeFactory>.DependencyList();
-            if (_type is MetadataType && _constructed && _type.RuntimeInterfaces.Length > 0)
+            if (_constructed)
             {
-                dependencyList.Add(factory.InterfaceDispatchMap(_type), "Interface dispatch map");
+                DependencyList dependencyList = new DependencyList();
+                if (_type.RuntimeInterfaces.Length > 0)
+                {
+                    dependencyList.Add(factory.InterfaceDispatchMap(_type), "Interface dispatch map");
+                }
+
+                if (_type.IsArray)
+                {
+                    // Array EEType depends on System.Array's virtuals. Array EETypes don't point to
+                    // their base type (i.e. there's no reloc based dependency making this "just work").
+                    dependencyList.Add(factory.ConstructedTypeSymbol(_type.BaseType), "Array base type");
+                }
+
+                dependencyList.Add(factory.VTable(_type), "VTable");
+                
+                return dependencyList;
             }
 
-            dependencyList.Add(factory.EETypeOptionalFields(_optionalFieldsBuilder), "EEType optional fields");
-            return dependencyList;
+            return null;
         }
 
         public override bool HasConditionalStaticDependencies
@@ -192,10 +223,9 @@ namespace ILCompiler.DependencyAnalysis
 
                 // Since the vtable is dependency driven, generate conditional static dependencies for
                 // all possible vtable entries
-                foreach (MethodDesc method in _type.GetMethods())
+                if (_type.GetClosestMetadataType().GetAllVirtualMethods().GetEnumerator().MoveNext())
                 {
-                    if (method.IsVirtual)
-                        return true;
+                    return true;
                 }
 
                 // If the type implements at least one interface, calls against that interface could result in this type's
@@ -209,32 +239,36 @@ namespace ILCompiler.DependencyAnalysis
 
         public override IEnumerable<CombinedDependencyListEntry> GetConditionalStaticDependencies(NodeFactory factory)
         {
-            if (_type is MetadataType)
+            MetadataType mdType = _type.GetClosestMetadataType();
+
+            foreach (MethodDesc decl in mdType.EnumAllVirtualSlots())
             {
-                foreach (MethodDesc decl in VirtualFunctionResolution.EnumAllVirtualSlots((MetadataType)_type))
+                MethodDesc impl = mdType.FindVirtualFunctionTargetMethodOnObjectType(decl);
+                if (impl.OwningType == mdType && !impl.IsAbstract)
                 {
-                    MethodDesc impl = VirtualFunctionResolution.FindVirtualFunctionTargetMethodOnObjectType(decl, (MetadataType)_type);
-                    if (impl.OwningType == _type && !impl.IsAbstract)
-                    {
-                        yield return new DependencyNodeCore<NodeFactory>.CombinedDependencyListEntry(factory.MethodEntrypoint(impl), factory.VirtualMethodUse(decl), "Virtual method");
-                    }
+                    yield return new DependencyNodeCore<NodeFactory>.CombinedDependencyListEntry(factory.MethodEntrypoint(impl, _type.IsValueType), factory.VirtualMethodUse(decl), "Virtual method");
                 }
+            }
 
-                // Add conditional dependencies for interface methods the type implements. For example, if the type T implements
-                // interface IFoo which has a method M1, add a dependency on T.M1 dependent on IFoo.M1 being called, since it's
-                // possible for any IFoo object to actually be an instance of T.
-                foreach (DefType interfaceType in _type.RuntimeInterfaces)
+            Debug.Assert(
+                _type == mdType ||
+                ((System.Collections.IStructuralEquatable)mdType.RuntimeInterfaces).Equals(_type.RuntimeInterfaces,
+                EqualityComparer<DefType>.Default));
+
+            // Add conditional dependencies for interface methods the type implements. For example, if the type T implements
+            // interface IFoo which has a method M1, add a dependency on T.M1 dependent on IFoo.M1 being called, since it's
+            // possible for any IFoo object to actually be an instance of T.
+            foreach (DefType interfaceType in mdType.RuntimeInterfaces)
+            {
+                Debug.Assert(interfaceType.IsInterface);
+
+                foreach (MethodDesc interfaceMethod in interfaceType.GetAllVirtualMethods())
                 {
-                    Debug.Assert(interfaceType.IsInterface);
-
-                    foreach (MethodDesc interfaceMethod in interfaceType.GetMethods())
+                    MethodDesc implMethod = mdType.ResolveInterfaceMethodToVirtualMethodOnType(interfaceMethod);
+                    if (implMethod != null)
                     {
-                        Debug.Assert(interfaceMethod.IsVirtual);
-                        MethodDesc implMethod = VirtualFunctionResolution.ResolveInterfaceMethodToVirtualMethodOnType(interfaceMethod, _type.GetClosestMetadataType());
-                        if (implMethod != null)
-                        {
-                            yield return new DependencyNodeCore<NodeFactory>.CombinedDependencyListEntry(factory.VirtualMethodUse(implMethod), factory.ReadyToRunHelper(ReadyToRunHelperId.InterfaceDispatch, interfaceMethod), "Interface method");
-                        }
+                        yield return new CombinedDependencyListEntry(factory.VirtualMethodUse(implMethod), factory.ReadyToRunHelper(ReadyToRunHelperId.InterfaceDispatch, interfaceMethod), "Interface method");
+                        yield return new CombinedDependencyListEntry(factory.VirtualMethodUse(implMethod), factory.ReadyToRunHelper(ReadyToRunHelperId.ResolveVirtualFunction, interfaceMethod), "Interface method address");
                     }
                 }
             }
@@ -246,7 +280,7 @@ namespace ILCompiler.DependencyAnalysis
         /// <param name="pointerSize">The size of a pointer in bytes in the target architecture</param>
         public static int GetVTableOffset(int pointerSize)
         {
-            return 16 + pointerSize;
+            return 16 + 2 * pointerSize;
         }
 
         private void OutputComponentSize(ref ObjectDataBuilder objData)
@@ -295,10 +329,9 @@ namespace ILCompiler.DependencyAnalysis
             else if (_type is ArrayType)
             {
                 objectSize = 3 * pointerSize; // SyncBlock + EETypePtr + Length
-                int rank = ((ArrayType)_type).Rank;
-                if (rank > 1)
+                if (!_type.IsSzArray)
                     objectSize +=
-                        2 * _type.Context.GetWellKnownType(WellKnownType.Int32).GetElementSize() * rank;
+                        2 * _type.Context.GetWellKnownType(WellKnownType.Int32).GetElementSize() * ((ArrayType)_type).Rank;
             }
             else if (_type is PointerType)
             {
@@ -369,17 +402,11 @@ namespace ILCompiler.DependencyAnalysis
             }
 
             int virtualSlotCount = 0;
-            TypeDesc currentTypeSlice = _type;
+            TypeDesc currentTypeSlice = _type.GetClosestMetadataType();
 
             while (currentTypeSlice != null)
             {
-                List<MethodDesc> virtualSlots;
-                factory.VirtualSlots.TryGetValue(currentTypeSlice, out virtualSlots);
-                if (virtualSlots != null)
-                {
-                    virtualSlotCount += virtualSlots.Count;
-                }
-
+                virtualSlotCount += factory.VTable(currentTypeSlice).Slots.Count;
                 currentTypeSlice = currentTypeSlice.BaseType;
             }
 
@@ -389,25 +416,29 @@ namespace ILCompiler.DependencyAnalysis
 
         private void OutputVirtualSlots(NodeFactory factory, ref ObjectDataBuilder objData, TypeDesc implType, TypeDesc declType)
         {
+            declType = declType.GetClosestMetadataType();
+
             var baseType = declType.BaseType;
             if (baseType != null)
                 OutputVirtualSlots(factory, ref objData, implType, baseType);
 
-            List<MethodDesc> virtualSlots;
-            factory.VirtualSlots.TryGetValue(declType, out virtualSlots);
-
-            if (virtualSlots != null)
+            IReadOnlyList<MethodDesc> virtualSlots = factory.VTable(declType).Slots;
+            
+            for (int i = 0; i < virtualSlots.Count; i++)
             {
-                for (int i = 0; i < virtualSlots.Count; i++)
-                {
-                    MethodDesc declMethod = virtualSlots[i];
-                    MethodDesc implMethod = VirtualFunctionResolution.FindVirtualFunctionTargetMethodOnObjectType(declMethod, implType.GetClosestMetadataType());
+                MethodDesc declMethod = virtualSlots[i];
+                MethodDesc implMethod = implType.GetClosestMetadataType().FindVirtualFunctionTargetMethodOnObjectType(declMethod);
 
-                    if (!implMethod.IsAbstract)
-                        objData.EmitPointerReloc(factory.MethodEntrypoint(implMethod));
-                    else
-                        objData.EmitZeroPointer();
+                if (declMethod.HasInstantiation)
+                {
+                    // Generic virtual methods will "compile", but will fail to link. Check for it here.
+                    throw new NotImplementedException("VTable for " + _type + " has generic virtual methods.");
                 }
+
+                if (!implMethod.IsAbstract)
+                    objData.EmitPointerReloc(factory.MethodEntrypoint(implMethod, implMethod.OwningType.IsValueType));
+                else
+                    objData.EmitZeroPointer();
             }
         }
 
@@ -450,13 +481,13 @@ namespace ILCompiler.DependencyAnalysis
         /// </summary>
         private void ComputeOptionalEETypeFields(NodeFactory factory)
         {
-            ComputeRareFlags();
+            ComputeRareFlags(factory);
             ComputeNullableValueOffset();
             ComputeICastableVirtualMethodSlots(factory);
             ComputeValueTypeFieldPadding();
         }
 
-        void ComputeRareFlags()
+        void ComputeRareFlags(NodeFactory factory)
         {
             uint flags = 0;
 
@@ -465,7 +496,7 @@ namespace ILCompiler.DependencyAnalysis
                 flags |= (uint)EETypeRareFlags.IsNullableFlag;
             }
 
-            if (_type.HasStaticConstructor)
+            if (factory.TypeInitializationManager.HasLazyStaticConstructor(_type))
             {
                 flags |= (uint)EETypeRareFlags.HasCctorFlag;
             }
@@ -573,10 +604,10 @@ namespace ILCompiler.DependencyAnalysis
             }
         }
 
-        public override IEnumerable<CombinedDependencyListEntry> SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, NodeFactory context)
+        public override IEnumerable<CombinedDependencyListEntry> SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, NodeFactory factory)
         {
             List<CombinedDependencyListEntry> dynamicNodes = new List<DependencyNodeCore<NodeFactory>.CombinedDependencyListEntry>();
-            dynamicNodes.Add(new CombinedDependencyListEntry(context.EETypeOptionalFields(_optionalFieldsBuilder), null, "EEType optional fields"));
+            dynamicNodes.Add(new CombinedDependencyListEntry(factory.EETypeOptionalFields(_optionalFieldsBuilder), null, "EEType optional fields"));
             return dynamicNodes;
         }
     }

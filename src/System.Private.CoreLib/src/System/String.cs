@@ -186,7 +186,6 @@ namespace System
 
         [CLSCompliant(false)]
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        [SecurityCritical] // required to match contract
 #if CORERT
         unsafe public extern String(char* value);   // CtorCharPtr
 
@@ -226,7 +225,6 @@ namespace System
 
         [CLSCompliant(false)]
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        [SecurityCritical] // required to match contract
 #if CORERT
         unsafe public extern String(char* value, int startIndex, int length);   // CtorCharPtrStartLength
 
@@ -701,19 +699,19 @@ namespace System
 
                 while (length >= 12)
                 {
-                    if (*(long*)a != *(long*)b) return false;
-                    if (*(long*)(a + 4) != *(long*)(b + 4)) return false;
-                    if (*(long*)(a + 8) != *(long*)(b + 8)) return false;
+                    if (*(long*)a != *(long*)b) goto ReturnFalse;
+                    if (*(long*)(a + 4) != *(long*)(b + 4)) goto ReturnFalse;
+                    if (*(long*)(a + 8) != *(long*)(b + 8)) goto ReturnFalse;
                     length -= 12; a += 12; b += 12;
                 }
 #else
                 while (length >= 10)
                 {
-                    if (*(int*)a != *(int*)b) return false;
-                    if (*(int*)(a + 2) != *(int*)(b + 2)) return false;
-                    if (*(int*)(a + 4) != *(int*)(b + 4)) return false;
-                    if (*(int*)(a + 6) != *(int*)(b + 6)) return false;
-                    if (*(int*)(a + 8) != *(int*)(b + 8)) return false;
+                    if (*(int*)a != *(int*)b) goto ReturnFalse;
+                    if (*(int*)(a + 2) != *(int*)(b + 2)) goto ReturnFalse;
+                    if (*(int*)(a + 4) != *(int*)(b + 4)) goto ReturnFalse;
+                    if (*(int*)(a + 6) != *(int*)(b + 6)) goto ReturnFalse;
+                    if (*(int*)(a + 8) != *(int*)(b + 8)) goto ReturnFalse;
                     length -= 10; a += 10; b += 10;
                 }
 #endif
@@ -724,11 +722,14 @@ namespace System
                 // the zero terminator.
                 while (length > 0)
                 {
-                    if (*(int*)a != *(int*)b) break;
+                    if (*(int*)a != *(int*)b) goto ReturnFalse;
                     length -= 2; a += 2; b += 2;
                 }
 
-                return (length <= 0);
+                return true;
+
+                ReturnFalse:
+                return false;
             }
         }
 
@@ -967,13 +968,10 @@ namespace System
                 return true;
             }
 
-            if ((Object)a == null || (Object)b == null)
+            if ((Object)a == null || (Object)b == null || a.Length != b.Length)
             {
                 return false;
             }
-
-            if (a.Length != b.Length)
-                return false;
 
             return OrdinalCompareEqualLengthStrings(a, b);
         }
@@ -1022,9 +1020,7 @@ namespace System
         {
             if (Object.ReferenceEquals(a, b))
                 return true;
-            if (a == null || b == null)
-                return false;
-            if (a.Length != b.Length)
+            if (a == null || b == null || a.Length != b.Length)
                 return false;
             return OrdinalCompareEqualLengthStrings(a, b);
         }
@@ -1033,9 +1029,7 @@ namespace System
         {
             if (Object.ReferenceEquals(a, b))
                 return false;
-            if (a == null || b == null)
-                return true;
-            if (a.Length != b.Length)
+            if (a == null || b == null || a.Length != b.Length)
                 return true;
             return !OrdinalCompareEqualLengthStrings(a, b);
         }
@@ -1271,7 +1265,7 @@ namespace System
             }
 
             int[] sepList = new int[Length];
-            int numReplaces = MakeSeparatorList(separator, ref sepList);
+            int numReplaces = MakeSeparatorList(separator, sepList);
 
             // Handle the special case of no replaces.
             if (0 == numReplaces)
@@ -1326,7 +1320,7 @@ namespace System
 
             int[] sepList = new int[Length];
             int[] lengthList = new int[Length];
-            int numReplaces = MakeSeparatorList(separator, ref sepList, ref lengthList);
+            int numReplaces = MakeSeparatorList(separator, sepList, lengthList);
 
             //Handle the special case of no replaces.
             if (0 == numReplaces)
@@ -1438,7 +1432,7 @@ namespace System
         // Args: separator  -- A string containing all of the split characters.
         //       sepList    -- an array of ints for split char indicies.
         //--------------------------------------------------------------------    
-        private unsafe int MakeSeparatorList(char[] separator, ref int[] sepList)
+        private unsafe int MakeSeparatorList(char[] separator, int[] sepList)
         {
             int foundCount = 0;
 
@@ -1487,7 +1481,7 @@ namespace System
         //       sepList    -- an array of ints for split string indicies.
         //       lengthList -- an array of ints for split string lengths.
         //--------------------------------------------------------------------    
-        private unsafe int MakeSeparatorList(String[] separators, ref int[] sepList, ref int[] lengthList)
+        private unsafe int MakeSeparatorList(String[] separators, int[] sepList, int[] lengthList)
         {
             int foundCount = 0;
             int sepListCount = sepList.Length;
@@ -1898,7 +1892,7 @@ namespace System
         // if this is equal to value, or a value greater than 0 if this is greater than value.
         //
 
-        private int CompareTo(Object value)
+        int IComparable.CompareTo(Object value)
         {
             if (value == null)
             {
@@ -1911,11 +1905,6 @@ namespace System
             }
 
             return String.Compare(this, (String)value, StringComparison.CurrentCulture);
-        }
-
-        int IComparable.CompareTo(Object value)
-        {
-            return this.CompareTo(value);
         }
 
         // Determines the sorting relation of StrB to the current instance.
@@ -2688,6 +2677,12 @@ namespace System
 
             int oldLength = Length;
             int insertLength = value.Length;
+            
+            if (oldLength == 0)
+                return value;
+            if (insertLength == 0)
+                return this;
+            
             int newLength = oldLength + insertLength;
             if (newLength < 0)
                 throw new OutOfMemoryException();
@@ -2712,43 +2707,68 @@ namespace System
 
         // Replaces all instances of oldChar with newChar.
         //
-        private unsafe String ReplaceInternal(char oldChar, char newChar)
-        {
-            int firstFoundIndex = -1;
-
-            fixed (char* pChars = &_firstChar)
-            {
-                for (int i = 0; i < Length; i++)
-                {
-                    if (oldChar == pChars[i])
-                    {
-                        firstFoundIndex = i;
-                        break;
-                    }
-                }
-            }
-
-            if (-1 == firstFoundIndex)
-                return this;
-
-            char[] newChars = new char[Length];
-
-            fixed (char* pChars = &_firstChar)
-            {
-                //Copy the characters, doing the replacement as we go.
-                for (int i = 0; i < firstFoundIndex; i++)
-                    newChars[i] = pChars[i];
-
-                for (int i = firstFoundIndex; i < Length; i++)
-                    newChars[i] = (pChars[i] == oldChar) ? newChar : pChars[i];
-            }
-
-            return new string(newChars);
-        }
-
         public String Replace(char oldChar, char newChar)
         {
-            return ReplaceInternal(oldChar, newChar);
+            if (oldChar == newChar)
+                return this;
+
+            unsafe
+            {
+                int remainingLength = Length;
+
+                fixed (char* pChars = &_firstChar)
+                {
+                    char* pSrc = pChars;
+
+                    while (remainingLength > 0)
+                    {
+                        if (*pSrc == oldChar)
+                        {
+                            break;
+                        }
+
+                        remainingLength--;
+                        pSrc++;
+                    }
+                }
+
+                if (remainingLength == 0)
+                    return this;
+
+                String result = FastAllocateString(Length);
+
+                fixed (char* pChars = &_firstChar)
+                {
+                    fixed (char* pResult = &result._firstChar)
+                    {
+                        int copyLength = Length - remainingLength;
+
+                        //Copy the characters already proven not to match.
+                        if (copyLength > 0)
+                        {
+                            wstrcpy(pResult, pChars, copyLength);
+                        }
+
+                        //Copy the remaining characters, doing the replacement as we go.
+                        char* pSrc = pChars + copyLength;
+                        char* pDst = pResult + copyLength;
+
+                        do
+                        {
+                            char currentChar = *pSrc;
+                            if (currentChar == oldChar)
+                                currentChar = newChar;
+                            *pDst = currentChar;
+
+                            remainingLength--;
+                            pSrc++;
+                            pDst++;
+                        } while (remainingLength > 0);
+                    }
+                }
+
+                return result;
+            }
         }
 
         public String Replace(String oldValue, String newValue)
@@ -2863,7 +2883,13 @@ namespace System
             int oldLength = this.Length;
             if (count > oldLength - startIndex)
                 throw new ArgumentOutOfRangeException("count", SR.ArgumentOutOfRange_IndexCount);
+            
+            if (count == 0)
+                return this;
             int newLength = oldLength - count;
+            if (newLength == 0)
+                return string.Empty;
+            
             String result = FastAllocateString(newLength);
             unsafe
             {
@@ -3100,24 +3126,19 @@ namespace System
 
         public static String Concat(String str0, String str1, String str2)
         {
-            if (str0 == null && str1 == null && str2 == null)
+            if (IsNullOrEmpty(str0))
             {
-                return String.Empty;
+                return Concat(str1, str2);
             }
 
-            if (str0 == null)
+            if (IsNullOrEmpty(str1))
             {
-                str0 = String.Empty;
+                return Concat(str0, str2);
             }
 
-            if (str1 == null)
+            if (IsNullOrEmpty(str2))
             {
-                str1 = String.Empty;
-            }
-
-            if (str2 == null)
-            {
-                str2 = String.Empty;
+                return Concat(str0, str1);
             }
 
             int totalLength = str0.Length + str1.Length + str2.Length;
@@ -3132,29 +3153,24 @@ namespace System
 
         public static String Concat(String str0, String str1, String str2, String str3)
         {
-            if (str0 == null && str1 == null && str2 == null && str3 == null)
+            if (IsNullOrEmpty(str0))
             {
-                return String.Empty;
+                return Concat(str1, str2, str3);
             }
 
-            if (str0 == null)
+            if (IsNullOrEmpty(str1))
             {
-                str0 = String.Empty;
+                return Concat(str0, str2, str3);
             }
 
-            if (str1 == null)
+            if (IsNullOrEmpty(str2))
             {
-                str1 = String.Empty;
+                return Concat(str0, str1, str3);
             }
 
-            if (str2 == null)
+            if (IsNullOrEmpty(str3))
             {
-                str2 = String.Empty;
-            }
-
-            if (str3 == null)
-            {
-                str3 = String.Empty;
+                return Concat(str0, str1, str2);
             }
 
             int totalLength = str0.Length + str1.Length + str2.Length + str3.Length;

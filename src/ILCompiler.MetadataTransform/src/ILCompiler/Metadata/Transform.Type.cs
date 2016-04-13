@@ -4,7 +4,6 @@
 
 using System;
 using System.Collections.Generic;
-using System.Linq;
 using Internal.Metadata.NativeFormat.Writer;
 
 using Ecma = System.Reflection.Metadata;
@@ -17,7 +16,7 @@ namespace ILCompiler.Metadata
 {
     partial class Transform<TPolicy>
     {
-        private EntityMap<Cts.TypeDesc, MetadataRecord> _types =
+        internal EntityMap<Cts.TypeDesc, MetadataRecord> _types =
             new EntityMap<Cts.TypeDesc, MetadataRecord>(EqualityComparer<Cts.TypeDesc>.Default);
 
         private Action<Cts.MetadataType, TypeDefinition> _initTypeDef;
@@ -32,53 +31,59 @@ namespace ILCompiler.Metadata
 
         public override MetadataRecord HandleType(Cts.TypeDesc type)
         {
+            Debug.Assert(!IsBlocked(type));
+
             MetadataRecord rec;
+            if (_types.TryGet(type, out rec))
+            {
+                return rec;
+            }
 
             if (type.IsSzArray)
             {
                 var arrayType = (Cts.ArrayType)type;
-                rec = _types.GetOrCreate(arrayType, _initSzArray ?? (_initSzArray = InitializeSzArray));
+                rec = _types.Create(arrayType, _initSzArray ?? (_initSzArray = InitializeSzArray));
             }
             else if (type.IsArray)
             {
                 var arrayType = (Cts.ArrayType)type;
-                rec = _types.GetOrCreate(arrayType, _initArray ?? (_initArray = InitializeArray));
+                rec = _types.Create(arrayType, _initArray ?? (_initArray = InitializeArray));
             }
             else if (type.IsByRef)
             {
                 var byRefType = (Cts.ByRefType)type;
-                rec = _types.GetOrCreate(byRefType, _initByRef ?? (_initByRef = InitializeByRef));
+                rec = _types.Create(byRefType, _initByRef ?? (_initByRef = InitializeByRef));
             }
             else if (type.IsPointer)
             {
                 var pointerType = (Cts.PointerType)type;
-                rec = _types.GetOrCreate(pointerType, _initPointer ?? (_initPointer = InitializePointer));
+                rec = _types.Create(pointerType, _initPointer ?? (_initPointer = InitializePointer));
             }
             else if (type is Cts.SignatureTypeVariable)
             {
                 var variable = (Cts.SignatureTypeVariable)type;
-                rec = _types.GetOrCreate(variable, _initTypeVar ?? (_initTypeVar = InitializeTypeVariable));
+                rec = _types.Create(variable, _initTypeVar ?? (_initTypeVar = InitializeTypeVariable));
             }
             else if (type is Cts.SignatureMethodVariable)
             {
                 var variable = (Cts.SignatureMethodVariable)type;
-                rec = _types.GetOrCreate(variable, _initMethodVar ?? (_initMethodVar = InitializeMethodVariable));
+                rec = _types.Create(variable, _initMethodVar ?? (_initMethodVar = InitializeMethodVariable));
             }
             else if (type is Cts.InstantiatedType)
             {
                 var instType = (Cts.InstantiatedType)type;
-                rec = _types.GetOrCreate(instType, _initTypeInst ?? (_initTypeInst = InitializeTypeInstance));
+                rec = _types.Create(instType, _initTypeInst ?? (_initTypeInst = InitializeTypeInstance));
             }
             else
             {
                 var metadataType = (Cts.MetadataType)type;
                 if (_policy.GeneratesMetadata(metadataType))
                 {
-                    rec = _types.GetOrCreate(metadataType, _initTypeDef ?? (_initTypeDef = InitializeTypeDef));
+                    rec = _types.Create(metadataType, _initTypeDef ?? (_initTypeDef = InitializeTypeDef));
                 }
                 else
                 {
-                    rec = _types.GetOrCreate(metadataType, _initTypeRef ?? (_initTypeRef = InitializeTypeRef));
+                    rec = _types.Create(metadataType, _initTypeRef ?? (_initTypeRef = InitializeTypeRef));
                 }
             }
 
@@ -140,28 +145,70 @@ namespace ILCompiler.Metadata
 
         private void InitializeTypeInstance(Cts.InstantiatedType entity, TypeSpecification record)
         {
-            var args = new List<MetadataRecord>(entity.Instantiation.Length);
-            for (int i = 0; i < entity.Instantiation.Length; i++)
-            {
-                args.Add(HandleType(entity.Instantiation[i]));
-            }
-
-            record.Signature = new TypeInstantiationSignature
+            var sig = new TypeInstantiationSignature
             {
                 GenericType = HandleType(entity.GetTypeDefinition()),
-                GenericTypeArguments = args
             };
+
+            for (int i = 0; i < entity.Instantiation.Length; i++)
+            {
+                sig.GenericTypeArguments.Add(HandleType(entity.Instantiation[i]));
+            }
+
+            record.Signature = sig;
+        }
+
+        private TypeReference GetNestedReferenceParent(Cts.MetadataType entity)
+        {
+            // This special code deals with the metadata format requirement saying that
+            // nested type *references* need to have a type *reference* as their containing type.
+            // This is potentially in conflict with our other rule that says to always resolve
+            // references to their definition records (we are avoiding emitting references
+            // to things that have a definition within the same blob to save space).
+
+            Cts.MetadataType containingType = entity.ContainingType;
+            MetadataRecord parentRecord = HandleType(containingType);
+            TypeReference parentReferenceRecord = parentRecord as TypeReference;
+            
+            if (parentReferenceRecord != null)
+            {
+                // Easy case - parent type doesn't have a definition record.
+                return parentReferenceRecord;
+            }
+
+            // Parent has a type definition record. We need to make a new record that's a reference.
+            // We don't bother with interning these because this will be rare and metadata writer
+            // will do the interning anyway.
+            Debug.Assert(parentRecord is TypeDefinition);
+
+            parentReferenceRecord = new TypeReference
+            {
+                TypeName = HandleString(containingType.Name),
+            };
+
+            if (containingType.ContainingType != null)
+            {
+                parentReferenceRecord.ParentNamespaceOrType = GetNestedReferenceParent(containingType);
+            }
+            else
+            {
+                parentReferenceRecord.ParentNamespaceOrType = HandleNamespaceReference(containingType.Module, containingType.Namespace);
+            }
+
+            return parentReferenceRecord;
         }
 
         private void InitializeTypeRef(Cts.MetadataType entity, TypeReference record)
         {
+            Debug.Assert(entity.IsTypeDefinition);
+
             if (entity.ContainingType != null)
             {
-                record.ParentNamespaceOrType = HandleType(entity.ContainingType);
+                record.ParentNamespaceOrType = GetNestedReferenceParent(entity);
             }
             else
             {
-                record.ParentNamespaceOrType = HandleNamespaceDefinition(entity.Module, entity.Namespace);
+                record.ParentNamespaceOrType = HandleNamespaceReference(entity.Module, entity.Namespace);
             }
 
             record.TypeName = HandleString(entity.Name);
@@ -169,6 +216,8 @@ namespace ILCompiler.Metadata
 
         private void InitializeTypeDef(Cts.MetadataType entity, TypeDefinition record)
         {
+            Debug.Assert(entity.IsTypeDefinition);
+
             if (entity.ContainingType != null)
             {
                 var enclosingType = (TypeDefinition)HandleType(entity.ContainingType);
@@ -198,45 +247,49 @@ namespace ILCompiler.Metadata
                 record.BaseType = HandleType(entity.BaseType);
             }
 
-            if (entity.ExplicitlyImplementedInterfaces.Length > 0)
+            record.Interfaces.Capacity = entity.ExplicitlyImplementedInterfaces.Length;
+            foreach (var interfaceType in entity.ExplicitlyImplementedInterfaces)
             {
-                record.Interfaces = entity.ExplicitlyImplementedInterfaces
-                    .Where(i => !IsBlocked(i))
-                    .Select(i => HandleType(i)).ToList();
+                if (IsBlocked(interfaceType))
+                    continue;
+                record.Interfaces.Add(HandleType(interfaceType));
             }
 
             if (entity.HasInstantiation)
             {
-                var genericParams = new List<GenericParameter>(entity.Instantiation.Length);
+                record.GenericParameters.Capacity = entity.Instantiation.Length;
                 foreach (var p in entity.Instantiation)
-                    genericParams.Add(HandleGenericParameter((Cts.GenericParameterDesc)p));
-                record.GenericParameters = genericParams;
+                    record.GenericParameters.Add(HandleGenericParameter((Cts.GenericParameterDesc)p));
             }
 
-            var fields = new List<Field>();
             foreach (var field in entity.GetFields())
             {
                 if (_policy.GeneratesMetadata(field))
                 {
-                    fields.Add(HandleFieldDefinition(field));
+                    record.Fields.Add(HandleFieldDefinition(field));
                 }
             }
-            record.Fields = fields;
 
-            var methods = new List<Method>();
             foreach (var method in entity.GetMethods())
             {
                 if (_policy.GeneratesMetadata(method))
                 {
-                    methods.Add(HandleMethodDefinition(method));
+                    record.Methods.Add(HandleMethodDefinition(method));
                 }
             }
-            record.Methods = methods;
 
             var ecmaEntity = entity as Cts.Ecma.EcmaType;
             if (ecmaEntity != null)
             {
                 Ecma.TypeDefinition ecmaRecord = ecmaEntity.MetadataReader.GetTypeDefinition(ecmaEntity.Handle);
+
+                foreach (var e in ecmaRecord.GetEvents())
+                {
+                    Event evt = HandleEvent(ecmaEntity.EcmaModule, e);
+                    if (evt != null)
+                        record.Events.Add(evt);
+                }
+
                 foreach (var property in ecmaRecord.GetProperties())
                 {
                     Property prop = HandleProperty(ecmaEntity.EcmaModule, property);
@@ -244,10 +297,14 @@ namespace ILCompiler.Metadata
                         record.Properties.Add(prop);
                 }
 
-                // TODO: Events
-
-                // TODO: CustomAttributes
+                Ecma.CustomAttributeHandleCollection customAttributes = ecmaRecord.GetCustomAttributes();
+                if (customAttributes.Count > 0)
+                {
+                    record.CustomAttributes = HandleCustomAttributes(ecmaEntity.EcmaModule, customAttributes);
+                }
             }
+
+            // TODO: MethodImpls
         }
 
         private TypeAttributes GetTypeAttributes(Cts.MetadataType type)

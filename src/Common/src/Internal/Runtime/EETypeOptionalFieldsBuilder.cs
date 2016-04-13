@@ -93,7 +93,15 @@ namespace Internal.Runtime
 
             for (int i = 0; i < (int)EETypeOptionalFieldsElement.Count; i++)
             {
-                sb.Append(_rgFields[i]._value.ToString());
+                if (_rgFields[i]._fieldPresent)
+                {
+                    sb.Append(_rgFields[i]._value.ToStringInvariant());
+                }
+                else
+                {
+                    sb.Append("x");
+                }
+                
 
                 if (i != (int)EETypeOptionalFieldsElement.Count - 1)
                 {
@@ -119,7 +127,9 @@ namespace Internal.Runtime
 
             for (EETypeOptionalFieldsElement eTag = 0; eTag < EETypeOptionalFieldsElement.Count; eTag++)
             {
-                if (GetFieldValue(eTag, 0) != other.GetFieldValue(eTag, 0))
+                int index = (int)eTag;
+                if (_rgFields[index]._fieldPresent != other._rgFields[index]._fieldPresent ||
+                    (_rgFields[index]._fieldPresent && _rgFields[index]._value != other._rgFields[index]._value))
                     return false;
             }
 

@@ -11,7 +11,7 @@ using System.Collections.Generic;
 
 namespace ILCompiler.DependencyAnalysis
 {
-    internal class CppMethodCodeNode : DependencyNodeCore<NodeFactory>, ISymbolNode
+    internal class CppMethodCodeNode : DependencyNodeCore<NodeFactory>, IMethodNode
     {
         private MethodDesc _method;
         private string _methodCode;
@@ -98,7 +98,7 @@ namespace ILCompiler.DependencyAnalysis
             }
         }
 
-        public override IEnumerable<DependencyListEntry> GetStaticDependencies(NodeFactory context)
+        public override IEnumerable<DependencyListEntry> GetStaticDependencies(NodeFactory factory)
         {
             var dependencies = new DependencyList();
 
@@ -108,12 +108,12 @@ namespace ILCompiler.DependencyAnalysis
             return dependencies;
         }
 
-        public override IEnumerable<CombinedDependencyListEntry> GetConditionalStaticDependencies(NodeFactory context)
+        public override IEnumerable<CombinedDependencyListEntry> GetConditionalStaticDependencies(NodeFactory factory)
         {
             return null;
         }
 
-        public override IEnumerable<CombinedDependencyListEntry> SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, NodeFactory context)
+        public override IEnumerable<CombinedDependencyListEntry> SearchDynamicDependencies(List<DependencyNodeCore<NodeFactory>> markedNodes, int firstNode, NodeFactory factory)
         {
             return null;
         }

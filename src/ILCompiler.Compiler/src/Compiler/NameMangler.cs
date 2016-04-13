@@ -4,9 +4,9 @@
 
 using System;
 using System.Diagnostics;
-using System.Globalization;
 using System.Collections.Generic;
 using System.Collections.Immutable;
+using System.IO;
 using System.Text;
 
 using Internal.TypeSystem;
@@ -100,7 +100,7 @@ namespace ILCompiler
             string result = origName;
             while (set.Contains(result))
             {
-                result = string.Concat(origName, "_", (iter++).ToString(CultureInfo.InvariantCulture));
+                result = string.Concat(origName, "_", (iter++).ToStringInvariant());
             }
             return result;
         }
@@ -174,8 +174,8 @@ namespace ILCompiler
                 case TypeFlags.Array:
                     // mangledName = "Array<" + GetSignatureCPPTypeName(((ArrayType)type).ElementType) + ">";
                     mangledName = GetMangledTypeName(((ArrayType)type).ElementType) + "__Array";
-                    if (((ArrayType)type).Rank != 1)
-                        mangledName += "Rank" + ((ArrayType)type).Rank.ToString();
+                    if (!type.IsSzArray)
+                        mangledName += "Rank" + ((ArrayType)type).Rank.ToStringInvariant();
                     break;
                 case TypeFlags.ByRef:
                     mangledName = GetMangledTypeName(((ByRefType)type).ParameterType) + "__ByRef";
@@ -371,7 +371,7 @@ namespace ILCompiler
                     }
                     else
                     {
-                        _compilationUnitPrefix = "";
+                        _compilationUnitPrefix = SanitizeName(Path.GetFileNameWithoutExtension(_compilation.Options.OutputFilePath));
                     }
                 }
                 return _compilationUnitPrefix;
