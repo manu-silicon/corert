@@ -161,7 +161,8 @@ namespace ILCompiler
 
                     foreach (var path in _typeSystemContext.InputFilePaths)
                     {
-                        newCompilationModuleSet.Add(_typeSystemContext.GetModuleFromPath(path.Value));
+                        foreach (var file in path.Value)
+                            newCompilationModuleSet.Add(_typeSystemContext.GetModuleFromPath(file));
                     }
 
                     lock (this)

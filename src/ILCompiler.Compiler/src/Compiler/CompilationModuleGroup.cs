@@ -60,12 +60,15 @@ namespace ILCompiler
         {
             foreach (var inputFile in _typeSystemContext.InputFilePaths)
             {
-                var module = _typeSystemContext.GetModuleFromPath(inputFile.Value);
+                foreach (var file in inputFile.Value)
+                {
+                    var module = _typeSystemContext.GetModuleFromPath(file);
 
-                if (module.PEReader.PEHeaders.IsExe)
-                    AddMainMethodCompilationRoot(module);
+                    if (module.PEReader.PEHeaders.IsExe)
+                        AddMainMethodCompilationRoot(module);
 
-                AddCompilationRootsForRuntimeExports(module);
+                    AddCompilationRootsForRuntimeExports(module);
+                }
             }
         }
 
