@@ -24,6 +24,7 @@ set __MSBCleanBuildArgs=
 set __SkipTestBuild=
 set __ToolchainMilestone=testing
 set __DotNetCliPath=
+set __CrossBuild=0
 
 :Arg_Loop
 if "%1" == "" goto ArgsDone
@@ -38,6 +39,9 @@ if /i "%1" == "-help" goto Usage
 if /i "%1" == "x64"    (set __BuildArch=x64&&shift&goto Arg_Loop)
 if /i "%1" == "x86"    (set __BuildArch=x86&&shift&goto Arg_Loop)
 if /i "%1" == "arm"    (set __BuildArch=arm&&shift&goto Arg_Loop)
+if /i "%1" == "ps4"    (set __BuildArch=x64&&set __BuildOS=Orbis&shift&goto Arg_Loop)
+
+if /i "%1" == "cross"   (set __CrossBuild=1&&shift&goto Arg_Loop)
 
 if /i "%1" == "debug"    (set __BuildType=Debug&shift&goto Arg_Loop)
 if /i "%1" == "release"   (set __BuildType=Release&shift&goto Arg_Loop)
@@ -151,7 +155,7 @@ call "!VS%__VSProductVersion%COMNTOOLS!\..\..\VC\vcvarsall.bat" %__VCBuildArch%
 
 :: Regenerate the VS solution
 pushd "%__IntermediatesDir%"
-call "%__SourceDir%\Native\gen-buildsys-win.bat" "%__ProjectDir%\src\Native" %__VSVersion% %__BuildArch% 
+call "%__SourceDir%\Native\gen-buildsys-win.bat" "%__ProjectDir%\src\Native" %__VSVersion% %__BuildArch% %__BuildType% %__CrossBuild%
 popd
 
 :BuildComponents
@@ -272,6 +276,7 @@ echo Build architecture: one of x64, x86, arm ^(default: x64^).
 echo Build type: one of Debug, Checked, Release ^(default: Debug^).
 echo Visual Studio version: ^(default: VS2015^).
 echo clean: force a clean build ^(default is to perform an incremental build^).
+echo cross: perform a cross compilation
 echo skiptests: skip building tests ^(default: tests are built^).
 exit /b 1
 

@@ -5,7 +5,7 @@ rem This file invokes cmake and generates the build system for windows.
 set argC=0
 for %%x in (%*) do Set /A argC+=1
 
-if NOT %argC%==3 GOTO :USAGE
+if NOT %argC%==5 GOTO :USAGE
 if %1=="/?" GOTO :USAGE
 
 setlocal
@@ -25,15 +25,22 @@ if defined CMakePath goto DoGen
 for /f "delims=" %%a in ('powershell -NoProfile -ExecutionPolicy RemoteSigned "& .\probe-win.ps1"') do %%a
 
 :DoGen
-"%CMakePath%" "-DCLR_CMAKE_TARGET_ARCH=%3" -G "Visual Studio %__VSString%" %1
+if "%5" == "0" (
+    "%CMakePath%" "-DCLR_CMAKE_TARGET_ARCH=%3" "-DCMAKE_BUILD_TYPE=%4" -G "Visual Studio %__VSString%" %1
+) else (
+    "%CMakePath%" "-DCLR_CMAKE_TARGET_ARCH=%3" "-DCMAKE_BUILD_TYPE=%4" -DCMAKE_TOOLCHAIN_FILE=%1\..\..\cross\ps4\toolchain.cmake  -G "Visual Studio %__VSString%" %1
+)
 endlocal
 GOTO :DONE
 
 :USAGE
   echo "Usage..."
-  echo "gen-buildsys-win.bat <path to top level CMakeLists.txt> <VSVersion>"
+  echo "gen-buildsys-win.bat <path to top level CMakeLists.txt> <VSVersion> <Arch> <BuildType>"
   echo "Specify the path to the top level CMake file - <corert>/src/Native"
   echo "Specify the VSVersion to be used - VS2013 or VS2015"
+  echo "Specify the target architecture - x86, x64, arm, ..."
+  echo "Specify the build type - Debug or Release"
+  echo "Specify if it is a cross platform build - 0 or 1"
   EXIT /B 1
 
 :DONE
