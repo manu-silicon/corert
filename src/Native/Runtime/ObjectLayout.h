@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //
 // Low-level types describing GC object layouts.
@@ -18,9 +17,9 @@
 class ObjHeader
 {
 private:
-#if defined(_WIN64)
+#if defined(BIT64)
     UInt32   m_uAlignpad;
-#endif // _WIN64
+#endif // BIT64
     UInt32   m_uSyncBlockValue;
 
 public:
@@ -72,7 +71,7 @@ public:
     }
     void RawSetMethodTable(MethodTable * pMT)
     {
-        m_pEEType = (EEType *)pMT;
+        m_pEEType = PTR_EEType((EEType *)pMT);
     }
     ////// End adaptor methods 
 };
@@ -92,9 +91,9 @@ class Array : public Object
     friend class AsmOffsets;
 
     UInt32       m_Length;
-#if defined(_WIN64)
+#if defined(BIT64)
     UInt32       m_uAlignpad;
-#endif // _WIN64
+#endif // BIT64
 public:  
     UInt32 GetArrayLength();
     void InitArrayLength(UInt32 length);
@@ -106,9 +105,9 @@ typedef DPTR(Array) PTR_Array;
 class MDArray : public Object
 {
     UInt32       m_Length;
-#if defined(_WIN64)
+#if defined(BIT64)
     UInt32       m_uAlignpad;
-#endif // _WIN64
+#endif // BIT64
     UInt32       m_Dimensions[1];
 public:  
     void InitMDArrayLength(UInt32 length);

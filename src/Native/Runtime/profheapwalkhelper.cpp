@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 // 
 // On desktop CLR, GC ETW event firing borrows heavily from code in the profiling API,
@@ -10,14 +9,13 @@
 // firing ETW events (not for getting a full profapi up on redhawk).
 // 
 
-#if defined(FEATURE_EVENT_TRACE)
+#include "common.h"
 
-#include "CommonTypes.h"
-#include "daccess.h"
-#include "DebugMacrosExt.h"
-#include "PalRedhawkCommon.h"
-#include "gcrhenv.h"
+#if defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
 
+#include "gcenv.h"
+#include "gc.h"
+#include "eventtrace.h"
 
 //---------------------------------------------------------------------------------------
 //
@@ -26,15 +24,15 @@
 // which does the real work.
 //
 // Arguments:
-//      ppObject - Object reference encountered
-///     ppObjectRef - Address that references ppObject
+//      pObj - Object reference encountered
+///     ppRoot - Address that references ppObject (can be interior pointer)
 //      pSC - ProfilingScanContext * containing the root kind and GCReferencesData used
 //            by RootReference2 
 //      dwFlags - Properties of the root as GC_CALL* constants (this function converts
 //                to COR_PRF_GC_ROOT_FLAGS.
 //
 
-void ScanRootsHelper(Object** ppObject, Object** ppObjectRef, ScanContext *pSC, DWORD dwFlags)
+void ScanRootsHelper(Object* pObj, Object** ppRoot, ScanContext * pSC, DWORD dwFlags)
 {
     ProfilingScanContext *pPSC = (ProfilingScanContext *)pSC;
 
@@ -44,18 +42,13 @@ void ScanRootsHelper(Object** ppObject, Object** ppObjectRef, ScanContext *pSC, 
     if (dwFlags & GC_CALL_PINNED)
         dwEtwRootFlags |= kEtwGCRootFlagsPinning;
 
-    void *rootID = ppObjectRef;
-
-    if (pPSC->dwEtwRootKind == kEtwGCRootKindFinalizer)
-        ppObject = ppObjectRef;
-
     // Notify ETW of the root
 
     if (ETW::GCLog::ShouldWalkHeapRootsForEtw())
     {
         ETW::GCLog::RootReference(
-            rootID,         // root address
-            *ppObject,      // object being rooted
+            ppRoot,         // root address
+            pObj,           // object being rooted
             NULL,           // pSecondaryNodeForDependentHandle is NULL, cuz this isn't a dependent handle
             FALSE,          // is dependent handle
             pPSC,
@@ -80,6 +73,7 @@ void ScanRootsHelper(Object** ppObject, Object** ppObjectRef, ScanContext *pSC, 
 BOOL CountContainedObjectRef(Object * pBO, void * context)
 {
     LIMITED_METHOD_CONTRACT;
+    UNREFERENCED_PARAMETER(pBO);
     // Increase the count
     (*((size_t *)context))++;
 
@@ -213,4 +207,4 @@ BOOL HeapWalkHelper(Object * pBO, void * pvContext)
     return TRUE;
 }
 
-#endif // defined(FEATURE_EVENT_TRACE)
+#endif // defined(FEATURE_EVENT_TRACE) || defined(GC_PROFILING)

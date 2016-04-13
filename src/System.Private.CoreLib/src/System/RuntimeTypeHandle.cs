@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Runtime;
@@ -9,12 +10,25 @@ using System.Runtime.InteropServices;
 using System.Runtime.CompilerServices;
 
 using Internal.Runtime.Augments;
+using Internal.Reflection.Core.NonPortable;
 
 namespace System
 {
     [StructLayout(LayoutKind.Sequential)]
     public unsafe struct RuntimeTypeHandle
     {
+#if CLR_RUNTIMETYPEHANDLE
+        internal RuntimeTypeHandle(RuntimeType type)
+        {
+            _type = type;
+        }
+
+        internal RuntimeTypeHandle(EETypePtr pEEType)
+        {
+            // CORERT-TODO: RuntimeTypeHandle
+            throw new NotImplementedException();
+        }
+#else
         //
         // Caution: There can be and are multiple EEType for the "same" type (e.g. int[]). That means
         // you can't use the raw IntPtr value for comparisons. 
@@ -24,6 +38,7 @@ namespace System
         {
             _value = pEEType.RawValue;
         }
+#endif
 
         public override bool Equals(Object obj)
         {
@@ -40,12 +55,15 @@ namespace System
             if (IsNull)
                 return 0;
 
-            return (int)RuntimeImports.RhGetEETypeHash(this.EEType);
+            return (int)RuntimeImports.RhGetEETypeHash(this.ToEETypePtr());
         }
 
         [MethodImpl(MethodImplOptions.AggressiveInlining)]
         public bool Equals(RuntimeTypeHandle handle)
         {
+#if CLR_RUNTIMETYPEHANDLE
+            return Object.ReferenceEquals(_type, handle._type);
+#else
             if (_value == handle._value)
             {
                 return true;
@@ -56,8 +74,9 @@ namespace System
             }
             else
             {
-                return RuntimeImports.AreTypesEquivalent(this.EEType, handle.EEType);
+                return RuntimeImports.AreTypesEquivalent(this.ToEETypePtr(), handle.ToEETypePtr());
             }
+#endif
         }
 
         public static bool operator ==(object left, RuntimeTypeHandle right)
@@ -88,19 +107,20 @@ namespace System
             return true;
         }
 
-        internal EETypePtr EEType
+        internal EETypePtr ToEETypePtr()
         {
-            get
-            {
-                return new EETypePtr(_value);
-            }
+#if CLR_RUNTIMETYPEHANDLE
+            return _type.ToEETypePtr();
+#else
+            return new EETypePtr(_value);
+#endif
         }
 
         internal RuntimeImports.RhEETypeClassification Classification
         {
             get
             {
-                return RuntimeImports.RhGetEETypeClassification(this.EEType);
+                return RuntimeImports.RhGetEETypeClassification(this.ToEETypePtr());
             }
         }
 
@@ -108,7 +128,11 @@ namespace System
         {
             get
             {
+#if CLR_RUNTIMETYPEHANDLE
+                return _type == null;
+#else
                 return _value == new IntPtr(0);
+#endif
             }
         }
 
@@ -118,7 +142,7 @@ namespace System
             get
             {
                 String s;
-                EETypePtr eeType = this.EEType;
+                EETypePtr eeType = this.ToEETypePtr();
                 IntPtr rawEEType = eeType.RawValue;
                 IntPtr moduleBase = RuntimeImports.RhGetModuleFromEEType(rawEEType);
                 uint rva = (uint)(rawEEType.ToInt64() - moduleBase.ToInt64());
@@ -135,16 +159,41 @@ namespace System
             }
         }
 
+#if CORERT
+        [Intrinsic]
+#endif
+        internal static IntPtr GetValueInternal(RuntimeTypeHandle handle)
+        {
+            return handle.RawValue;
+        }
 
         internal IntPtr RawValue
         {
             get
             {
+#if CLR_RUNTIMETYPEHANDLE
+                return ToEETypePtr().RawValue;
+#else
                 return _value;
+#endif
             }
         }
 
+#if CLR_RUNTIMETYPEHANDLE
+        internal RuntimeType RuntimeType
+        {
+            get
+            {
+                return _type;
+            }
+        }
+#endif
+
+#if CLR_RUNTIMETYPEHANDLE
+        private RuntimeType _type;
+#else
         private IntPtr _value;
+#endif
     }
 }
 

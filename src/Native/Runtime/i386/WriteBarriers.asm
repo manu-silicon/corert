@@ -1,7 +1,6 @@
-;;
-;; Copyright (c) Microsoft. All rights reserved.
-;; Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-;;
+;; Licensed to the .NET Foundation under one or more agreements.
+;; The .NET Foundation licenses this file to you under the MIT license.
+;; See the LICENSE file in the project root for more information.
 
 ;;
 ;; Define the helpers used to implement the write barrier required when writing an object reference into a
@@ -105,7 +104,8 @@ FASTCALL_FUNC RhpAssignRef&REFREG&, 0
 
     ;; Export the canonical write barrier under unqualified name as well
     ifidni <REFREG>, <EDX>
-    ALTERNATE_ENTRY RhpAssignRef
+    ALTERNATE_ENTRY @RhpAssignRef@0
+    ALTERNATE_ENTRY RhpAssignRefAVLocation
     endif
 
     ;; Write the reference into the location. Note that we rely on the fact that no GC can occur between here
@@ -200,7 +200,8 @@ FASTCALL_FUNC RhpCheckedAssignRef&REFREG&, 0
 
     ;; Export the canonical write barrier under unqualified name as well
     ifidni <REFREG>, <EDX>
-    ALTERNATE_ENTRY RhpCheckedAssignRef
+    ALTERNATE_ENTRY @RhpCheckedAssignRef@0
+    ALTERNATE_ENTRY RhpCheckedAssignRefAVLocation
     endif
 
     ;; Write the reference into the location. Note that we rely on the fact that no GC can occur between here
@@ -261,6 +262,8 @@ ALTERNATE_ENTRY RhpCheckedXchgAVLocation
 
 FASTCALL_ENDFUNC
 
+ifndef CORERT
+
 ;;
 ;; Write barrier used when a large number of bytes possibly containing GC references have been updated. For
 ;; speed we don't try to determine GC series information for the value or array of values. Instead we just
@@ -292,7 +295,7 @@ FASTCALL_FUNC RhpBulkWriteBarrier, 8
     cmp     edx, 4
     jb      NoBarrierRequired
 
-ifdef WRITE_BARRIER_CHECK  
+ifdef WRITE_BARRIER_CHECK
 
     ;; Perform shadow heap updates corresponding to the gc heap updates that immediately preceded this helper
     ;; call. See the comment for UPDATE_GC_SHADOW above for a more detailed explanation of why we do this and
@@ -403,5 +406,7 @@ NoBarrierRequired:
     ret
 
 FASTCALL_ENDFUNC
+
+endif ; CORERT
 
     end

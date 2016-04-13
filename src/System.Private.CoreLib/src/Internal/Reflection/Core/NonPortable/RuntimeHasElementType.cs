@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Diagnostics;
@@ -7,7 +8,10 @@ using System.Collections.Generic;
 using System.Collections.Concurrent;
 
 using Internal.Runtime.Augments;
+
+#if ENABLE_REFLECTION_TRACE
 using Internal.Reflection.Tracing;
+#endif
 
 namespace Internal.Reflection.Core.NonPortable
 {
@@ -31,8 +35,10 @@ namespace Internal.Reflection.Core.NonPortable
         {
             get
             {
+#if ENABLE_REFLECTION_TRACE
                 if (ReflectionTrace.Enabled)
                     ReflectionTrace.Type_FullName(this);
+#endif
 
                 String elementFullName = GetElementType().FullName;
                 if (elementFullName == null)
@@ -45,8 +51,10 @@ namespace Internal.Reflection.Core.NonPortable
         {
             get
             {
+#if ENABLE_REFLECTION_TRACE
                 if (ReflectionTrace.Enabled)
                     ReflectionTrace.Type_Namespace(this);
+#endif
 
                 return GetElementType().Namespace;
             }

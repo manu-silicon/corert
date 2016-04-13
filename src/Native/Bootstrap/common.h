@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 // common.h : include file for standard system include files,
 // or project specific include files that are used frequently, but
@@ -13,6 +14,7 @@
 
 #include <stdint.h>
 #include <stdio.h>
+#include <stdlib.h>
 #include <string.h>
 #include <wchar.h>
 #include <assert.h>
@@ -21,9 +23,12 @@
 
 #include <new>
 
-#ifndef WIN32
+#ifndef _WIN32
 #include <pthread.h>
-#include <alloca.h>
+#endif
+
+#ifdef _MSC_VER
+#pragma warning(disable:4200) // zero-sized array
 #endif
 
 using namespace std;
@@ -31,21 +36,31 @@ using namespace std;
 class MethodTable;
 class Object;
 
+#ifdef _MSC_VER
+#define __NORETURN __declspec(noreturn)
+#else
+#define __NORETURN __attribute((noreturn))
+#endif
+
 int __initialize_runtime();
 void __shutdown_runtime();
 
 extern "C" Object * __allocate_object(MethodTable * pMT);
-extern "C" Object * RhNewMDArray(MethodTable * pMT, int32_t rank,...);
 extern "C" Object * __allocate_array(size_t elements, MethodTable * pMT);
-Object * __allocate_string(int32_t len);
-extern "C" __declspec(noreturn) void __throw_exception(void * pEx);
+extern "C" Object * RhNewMDArray(MethodTable * pMT, int32_t rank, ...);
+extern "C" Object * __castclass(void * obj, MethodTable * pMT);
+extern "C" Object * __isinst(void * obj, MethodTable * pMT);
+extern "C" __NORETURN void __throw_exception(void * pEx);
+
 Object * __load_string_literal(const char * string);
 
-extern "C" Object * __castclass_class(void * p, MethodTable * pMT);
-extern "C" Object * __isinst_class(void * p, MethodTable * pMT);
-
 extern "C" void __range_check_fail();
-void __range_check(void * a, size_t elem);
+
+inline void __range_check(void * a, size_t elem)
+{
+    if (elem >= *((size_t*)a + 1))
+        __range_check_fail();
+}
 
 Object * __get_commandline_args(int argc, char * argv[]);
 
@@ -70,28 +85,6 @@ struct ReversePInvokeFrame
 void __reverse_pinvoke(ReversePInvokeFrame* pRevFrame);
 void __reverse_pinvoke_return(ReversePInvokeFrame* pRevFrame);
 
-struct StaticGcDesc
-{
-    struct GCSeries
-    {
-        uint32_t m_size;
-        uint32_t m_startOffset;
-    };
-
-    uint32_t m_numSeries;
-    GCSeries m_series[0];
-};
-
-struct SimpleModuleHeader
-{
-    void* m_pStaticsGcDataSection;
-    StaticGcDesc* m_pStaticsGcInfo;
-    StaticGcDesc* m_pThreadStaticsGcInfo;
-};
-
-void __register_module(SimpleModuleHeader* pModule);
-
-// TODO: this might be wrong...
 typedef size_t UIntNative;
 
 inline bool IS_ALIGNED(UIntNative val, UIntNative alignment)
@@ -107,12 +100,17 @@ inline bool IS_ALIGNED(T* val, UIntNative alignment)
     return IS_ALIGNED(reinterpret_cast<UIntNative>(val), alignment);
 }
 
-#pragma warning(disable:4102)
-
 #define RAW_MIN_OBJECT_SIZE (3*sizeof(void*))
 
-#define AlignBaseSize(s) ((s < RAW_MIN_OBJECT_SIZE) ? RAW_MIN_OBJECT_SIZE : ((s + (sizeof(intptr_t)-1) & ~(sizeof(intptr_t)-1))))
+#define AlignBaseSize(s) ((s < RAW_MIN_OBJECT_SIZE) ? RAW_MIN_OBJECT_SIZE : ((s + (sizeof(void*)-1) & ~(sizeof(void*)-1))))
 
 #define ARRAY_BASE (2*sizeof(void*))
+
+#ifdef _MSC_VER
+// Warnings disabled for auto-generated cpp code
+#pragma warning(disable:4102) // unreferenced label
+#pragma warning(disable:4244) // possible loss of data
+#pragma warning(disable:4717) // recursive on all control paths
+#endif
 
 #endif // __COMMON_H

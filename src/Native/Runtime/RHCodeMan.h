@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 struct REGDISPLAY;
 struct GCInfoHeader;
 struct GCEnumContext;
@@ -65,6 +64,9 @@ public:
 
     static PTR_VOID GetReversePInvokeSaveFrame(EEMethodInfo *   pMethodInfo, 
                                                REGDISPLAY *     pContext);
+
+    static UIntNative GetConservativeUpperBoundForOutgoingArgs(EEMethodInfo *   pMethodInfo, 
+                                                               REGDISPLAY *     pContext);
 
     static PTR_VOID GetFramePointer(EEMethodInfo *  pMethodInfo, 
                                     REGDISPLAY *    pContext);

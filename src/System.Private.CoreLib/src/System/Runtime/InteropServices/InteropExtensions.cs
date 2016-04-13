@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Runtime.CompilerServices;
@@ -74,8 +75,8 @@ namespace System.Runtime.InteropServices
             //
             // @todo: B#754744 This is used as the Project N equivalent of MethodTable::IsBlittable(). The current implementation is rather... approximate.
             //
-            return handle.EEType.IsPrimitive ||
-                   !handle.EEType.HasPointers;
+            return handle.ToEETypePtr().IsPrimitive ||
+                   !handle.ToEETypePtr().HasPointers;
         }
 
         internal static bool MightBeBlittable(this EETypePtr eeType)
@@ -180,27 +181,27 @@ namespace System.Runtime.InteropServices
 
         public static int GetValueTypeSize(this RuntimeTypeHandle handle)
         {
-            return (int)handle.EEType.ValueTypeSize;
+            return (int)handle.ToEETypePtr().ValueTypeSize;
         }
 
         public static bool IsValueType(this RuntimeTypeHandle handle)
         {
-            return handle.EEType.IsValueType;
+            return handle.ToEETypePtr().IsValueType;
         }
 
         public static bool IsEnum(this RuntimeTypeHandle handle)
         {
-            return handle.EEType.IsEnum;
+            return handle.ToEETypePtr().IsEnum;
         }
 
         public static bool IsInterface(this RuntimeTypeHandle handle)
         {
-            return RuntimeImports.RhIsInterface(handle.EEType);
+            return RuntimeImports.RhIsInterface(handle.ToEETypePtr());
         }
 
         public static bool AreTypesAssignable(RuntimeTypeHandle sourceType, RuntimeTypeHandle targetType)
         {
-            return RuntimeImports.AreTypesAssignable(sourceType.EEType, targetType.EEType);
+            return RuntimeImports.AreTypesAssignable(sourceType.ToEETypePtr(), targetType.ToEETypePtr());
         }
 
         public static unsafe void Memcpy(IntPtr destination, IntPtr source, int bytesToCopy)
@@ -225,12 +226,12 @@ namespace System.Runtime.InteropServices
 
         public static bool RuntimeRegisterRefCountedHandleCallback(IntPtr pCalloutMethod, RuntimeTypeHandle pTypeFilter)
         {
-            return RuntimeImports.RhRegisterRefCountedHandleCallback(pCalloutMethod, pTypeFilter.EEType);
+            return RuntimeImports.RhRegisterRefCountedHandleCallback(pCalloutMethod, pTypeFilter.ToEETypePtr());
         }
 
         public static void RuntimeUnregisterRefCountedHandleCallback(IntPtr pCalloutMethod, RuntimeTypeHandle pTypeFilter)
         {
-            RuntimeImports.RhUnregisterRefCountedHandleCallback(pCalloutMethod, pTypeFilter.EEType);
+            RuntimeImports.RhUnregisterRefCountedHandleCallback(pCalloutMethod, pTypeFilter.ToEETypePtr());
         }
 
         /// <summary>
@@ -276,12 +277,12 @@ namespace System.Runtime.InteropServices
 
         public static bool IsArray(RuntimeTypeHandle type)
         {
-            return RuntimeImports.RhIsArray(type.EEType);
+            return RuntimeImports.RhIsArray(type.ToEETypePtr());
         }
 
         public static RuntimeTypeHandle GetArrayElementType(RuntimeTypeHandle arrayType)
         {
-            return new RuntimeTypeHandle(RuntimeImports.RhGetRelatedParameterType(arrayType.EEType));
+            return new RuntimeTypeHandle(RuntimeImports.RhGetRelatedParameterType(arrayType.ToEETypePtr()));
         }
 
         public static RuntimeTypeHandle GetTypeHandle(this object target)
@@ -291,17 +292,17 @@ namespace System.Runtime.InteropServices
 
         public static bool IsInstanceOf(object obj, RuntimeTypeHandle typeHandle)
         {
-            return (null != RuntimeImports.IsInstanceOf(obj, typeHandle.EEType));
+            return (null != RuntimeImports.IsInstanceOf(obj, typeHandle.ToEETypePtr()));
         }
 
         public static bool IsInstanceOfClass(object obj, RuntimeTypeHandle classTypeHandle)
         {
-            return (null != RuntimeImports.IsInstanceOfClass(obj, classTypeHandle.EEType));
+            return (null != RuntimeImports.IsInstanceOfClass(obj, classTypeHandle.ToEETypePtr()));
         }
 
         public static bool IsInstanceOfInterface(object obj, RuntimeTypeHandle interfaceTypeHandle)
         {
-            return (null != RuntimeImports.IsInstanceOfInterface(obj, interfaceTypeHandle.EEType));
+            return (null != RuntimeImports.IsInstanceOfInterface(obj, interfaceTypeHandle.ToEETypePtr()));
         }
 
         public static bool GuidEquals(ref Guid left, ref Guid right)
@@ -316,7 +317,7 @@ namespace System.Runtime.InteropServices
 
         public static object RuntimeNewObject(RuntimeTypeHandle typeHnd)
         {
-            return RuntimeImports.RhNewObject(typeHnd.EEType);
+            return RuntimeImports.RhNewObject(typeHnd.ToEETypePtr());
         }
 
         public static unsafe void UnsafeCopyTo(this System.Text.StringBuilder stringBuilder, char* destination)
@@ -376,7 +377,7 @@ namespace System.Runtime.InteropServices
 
         public static Delegate CreateDelegate(RuntimeTypeHandle typeHandleForDelegate, IntPtr ldftnResult, Object thisObject, bool isStatic, bool isVirtual, bool isOpen)
         {
-            return Delegate.CreateDelegate(typeHandleForDelegate.EEType, ldftnResult, thisObject, isStatic, isOpen);
+            return Delegate.CreateDelegate(typeHandleForDelegate.ToEETypePtr(), ldftnResult, thisObject, isStatic, isOpen);
         }
 
         public enum VariableHandleType

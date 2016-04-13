@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using Internal.DeveloperExperience;
 using System.Diagnostics.Contracts;
@@ -16,7 +17,6 @@ namespace System.Diagnostics
 
         internal sealed class NetNativeDebugLogger : IDebugLogger
         {
-            [SecuritySafeCritical]
             public void ShowAssertDialog(string stackTrace, string message, string detailMessage)
             {
                 string fullMessage = message + Environment.NewLine + detailMessage;
@@ -53,7 +53,6 @@ namespace System.Diagnostics
                 }
             }
 
-            [System.Security.SecuritySafeCritical]
             private static void WriteToDebugger(string message)
             {
                 Interop.mincore.OutputDebugString(message ?? string.Empty);
@@ -68,8 +67,9 @@ namespace System.Diagnostics
         [DebuggerHidden]
         internal static void DebugBreak()
         {
-            // IMPORTANT: don’t add any code here
-            // This method intentionally left empty and we’ll inject the IL “break” instruction through IL transformer 
+            // IMPORTANT: This call will let us detect if  debug break is broken, and also
+            // gives double chances.
+            DebugBreak();
         }
     }
 }

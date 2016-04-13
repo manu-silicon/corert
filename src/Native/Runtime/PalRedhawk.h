@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //
 // Provides declarations for external resources consumed by Redhawk. This comprises functionality
@@ -19,6 +18,7 @@
 
 #include <sal.h>
 #include <stdarg.h>
+#include "gcenv.structs.h"
 
 #ifndef PAL_REDHAWK_INCLUDED
 #define PAL_REDHAWK_INCLUDED
@@ -30,61 +30,53 @@
 #define __PN__MACHINECALL_CDECL_OR_DEFAULT __cdecl
 #endif
 
-#ifndef DACCESS_COMPILE 
-
-#define CALLBACK            __stdcall
-#define WINAPI              __stdcall
-#define WINBASEAPI          __declspec(dllimport)
+#ifndef _INC_WINDOWS
+//#ifndef DACCESS_COMPILE 
 
 // There are some fairly primitive type definitions below but don't pull them into the rest of Redhawk unless
 // we have to (in which case these definitions will move to CommonTypes.h).
 typedef WCHAR *             LPWSTR;
 typedef const WCHAR *       LPCWSTR;
+typedef char *              LPSTR;
+typedef const char *        LPCSTR;
 typedef void *              HINSTANCE;
 
 typedef void *              LPSECURITY_ATTRIBUTES;
 typedef void *              LPOVERLAPPED;
 
-typedef void(__stdcall *PFLS_CALLBACK_FUNCTION) (void* lpFlsData);
-#define FLS_OUT_OF_INDEXES ((UInt32)0xFFFFFFFF)
+#ifndef GCENV_INCLUDED
+#define CALLBACK            __stdcall
+#define WINAPI              __stdcall
+#define WINBASEAPI          __declspec(dllimport)
+#endif //!GCENV_INCLUDED
 
-union LARGE_INTEGER
-{
-    struct
-    {
-        UInt32  LowPart;
-        Int32   HighPart;
+#ifdef PLATFORM_UNIX
+#define DIRECTORY_SEPARATOR_CHAR '/'
+#else // PLATFORM_UNIX
+#define DIRECTORY_SEPARATOR_CHAR '\\'
+#endif // PLATFORM_UNIX
+
+typedef union _LARGE_INTEGER {
+    struct {
+#if BIGENDIAN
+        int32_t HighPart;
+        uint32_t LowPart;
+#else
+        uint32_t LowPart;
+        int32_t HighPart;
+#endif
     } u;
-    Int64       QuadPart;
-};
+    int64_t QuadPart;
+} LARGE_INTEGER, *PLARGE_INTEGER;
 
-struct GUID
-{
-    UInt32      Data1;
-    UInt16      Data2;
-    UInt16      Data3;
-    UInt8       Data4[8];
-};
+typedef struct _GUID {
+    uint32_t Data1;
+    uint16_t Data2;
+    uint16_t Data3;
+    uint8_t Data4[8];
+} GUID;
 
 #define DECLARE_HANDLE(_name) typedef HANDLE _name
-
-#endif // !DACCESS_COMPILE
-
-#if !defined(GCRH_WINDOWS_INCLUDED)
-
-struct CRITICAL_SECTION
-{
-    void *      DebugInfo;
-    Int32       LockCount;
-    Int32       RecursionCount;
-    HANDLE      OwningThread;
-    HANDLE      LockSemaphore;
-    UIntNative  SpinCount;
-};
-
-#endif //!GCRH_WINDOWS_INCLUDED
-
-#ifndef DACCESS_COMPILE
 
 struct SYSTEM_INFO
 {
@@ -110,15 +102,6 @@ struct SYSTEM_INFO
 // defined in gcrhenv.cpp
 bool __SwitchToThread(uint32_t dwSleepMSec, uint32_t dwSwitchCount);
 
-// @TODO: also declared in gcenv.h
-struct GCSystemInfo
-{
-    uint32_t dwNumberOfProcessors;
-    uint32_t dwPageSize;
-    uint32_t dwAllocationGranularity;
-};
-extern GCSystemInfo g_SystemInfo;
-
 struct OSVERSIONINFOEXW
 {
     UInt32 dwOSVersionInfoSize;
@@ -134,19 +117,11 @@ struct OSVERSIONINFOEXW
     UInt8 wReserved;
 };
 
-#endif //!DACCESS_COMPILE
-
-#if !defined(GCRH_WINDOWS_INCLUDED)
-
 struct FILETIME
 {
     UInt32 dwLowDateTime;
     UInt32 dwHighDateTime;
 };
-
-#endif
-
-#ifndef DACCESS_COMPILE
 
 enum MEMORY_RESOURCE_NOTIFICATION_TYPE
 {
@@ -200,7 +175,6 @@ struct SYSTEM_LOGICAL_PROCESSOR_INFORMATION
     };
 };
 
-
 #ifdef _AMD64_
 
 typedef struct DECLSPEC_ALIGN(16) _XSAVE_FORMAT {
@@ -218,7 +192,7 @@ typedef struct DECLSPEC_ALIGN(16) _XSAVE_FORMAT {
     UInt32  MxCsr;
     UInt32  MxCsr_Mask;
     Fp128   FloatRegisters[8];
-#if defined(_WIN64)
+#if defined(BIT64)
     Fp128   XmmRegisters[16];
     UInt8   Reserved4[96];
 #else
@@ -328,9 +302,9 @@ typedef struct DECLSPEC_ALIGN(8) _CONTEXT {
     UInt32 R10;
     UInt32 R11;
     UInt32 R12;
-    UInt32 Sp;
-    UInt32 Lr;
-    UInt32 Pc;
+    UInt32 Sp; // R13
+    UInt32 Lr; // R14
+    UInt32 Pc; // R15
     UInt32 Cpsr;
     UInt32 Fpscr;
     UInt32 Padding;
@@ -405,6 +379,86 @@ typedef struct _CONTEXT {
 } CONTEXT, *PCONTEXT;
 #include "poppack.h"
 
+#elif defined(_ARM64_)
+
+// Specify the number of breakpoints and watchpoints that the OS
+// will track. Architecturally, ARM64 supports up to 16. In practice,
+// however, almost no one implements more than 4 of each.
+
+#define ARM64_MAX_BREAKPOINTS     8
+#define ARM64_MAX_WATCHPOINTS     2
+
+typedef struct _NEON128 {
+    UInt64 Low;
+    Int64 High;
+} NEON128, *PNEON128;
+
+typedef struct DECLSPEC_ALIGN(16) _CONTEXT {
+    //
+    // Control flags.
+    //
+    UInt32 ContextFlags;
+
+    //
+    // Integer registers
+    //
+    UInt32 Cpsr;       // NZVF + DAIF + CurrentEL + SPSel
+    UInt64 X0;
+    UInt64 X1;
+    UInt64 X2;
+    UInt64 X3;
+    UInt64 X4;
+    UInt64 X5;
+    UInt64 X6;
+    UInt64 X7;
+    UInt64 X8;
+    UInt64 X9;
+    UInt64 X10;
+    UInt64 X11;
+    UInt64 X12;
+    UInt64 X13;
+    UInt64 X14;
+    UInt64 X15;
+    UInt64 X16;
+    UInt64 X17;
+    UInt64 X18;
+    UInt64 X19;
+    UInt64 X20;
+    UInt64 X21;
+    UInt64 X22;
+    UInt64 X23;
+    UInt64 X24;
+    UInt64 X25;
+    UInt64 X26;
+    UInt64 X27;
+    UInt64 X28;
+    UInt64 Fp; // X29
+    UInt64 Lr; // X30
+    UInt64 Sp;
+    UInt64 Pc;
+
+    //
+    // Floating Point/NEON Registers
+    //
+    NEON128 V[32];
+    UInt32 Fpcr;
+    UInt32 Fpsr;
+
+    //
+    // Debug registers
+    //
+    UInt32 Bcr[ARM64_MAX_BREAKPOINTS];
+    UInt64 Bvr[ARM64_MAX_BREAKPOINTS];
+    UInt32 Wcr[ARM64_MAX_WATCHPOINTS];
+    UInt64 Wvr[ARM64_MAX_WATCHPOINTS];
+
+    void SetIP(UIntNative ip) { Pc = ip; }
+    void SetArg0Reg(UIntNative val) { X0 = val; }
+    void SetArg1Reg(UIntNative val) { X1 = val; }
+    UIntNative GetIP() { return Pc; }
+    UIntNative GetLR() { return Lr; }
+} CONTEXT, *PCONTEXT;
+
 #endif 
 
 
@@ -450,58 +504,23 @@ typedef enum _EXCEPTION_DISPOSITION {
 EXTERN_C unsigned long __cdecl _exception_code(void);
 EXTERN_C void *        __cdecl _exception_info(void);
 
-#endif // !DACCESS_COMPILE
+//#endif // !DACCESS_COMPILE
+#endif // !_INC_WINDOWS
 
-#ifdef FEATURE_ETW 
 
-typedef UInt64 REGHANDLE;
-typedef UInt64 TRACEHANDLE;
-
-struct EVENT_DATA_DESCRIPTOR
-{
-    UInt64  Ptr;
-    UInt32  Size;
-    UInt32  Reserved;
-};
-
-struct EVENT_DESCRIPTOR
-{
-    UInt16  Id;
-    UInt8   Version;
-    UInt8   Channel;
-    UInt8   Level;
-    UInt8   Opcode;
-    UInt16  Task;
-    UInt64  Keyword;
-
-};
-
-struct EVENT_FILTER_DESCRIPTOR
-{
-    UInt64  Ptr;
-    UInt32  Size;
-    UInt32  Type;
-
-};
-
-__forceinline
-void
-EventDataDescCreate(_Out_ EVENT_DATA_DESCRIPTOR * EventDataDescriptor, _In_opt_ const void * DataPtr, UInt32 DataSize)
-{
-    EventDataDescriptor->Ptr = (UInt64)DataPtr;
-    EventDataDescriptor->Size = DataSize;
-    EventDataDescriptor->Reserved = 0;
-}
-
-#endif // FEATURE_ETW
 
 #ifndef DACCESS_COMPILE 
+#ifndef _INC_WINDOWS
 
 typedef UInt32 (WINAPI *PTHREAD_START_ROUTINE)(_In_opt_ void* lpThreadParameter);
 typedef IntNative (WINAPI *FARPROC)();
 
+#ifndef GCENV_INCLUDED
 #define TRUE                    1
 #define FALSE                   0
+#endif // !GCENV_INCLUDED
+
+#define INVALID_HANDLE_VALUE    ((HANDLE)(IntNative)-1)
 
 #define DLL_PROCESS_ATTACH      1
 #define DLL_THREAD_ATTACH       2
@@ -510,8 +529,6 @@ typedef IntNative (WINAPI *FARPROC)();
 #define DLL_PROCESS_VERIFIER    4
 
 #define INFINITE                0xFFFFFFFF
-
-#define INVALID_HANDLE_VALUE    ((HANDLE)(IntNative)-1)
 
 #define DUPLICATE_CLOSE_SOURCE  0x00000001
 #define DUPLICATE_SAME_ACCESS   0x00000002
@@ -598,9 +615,57 @@ typedef IntNative (WINAPI *FARPROC)();
 #define GET_MODULE_HANDLE_EX_FLAG_UNCHANGED_REFCOUNT    0x00000002
 #define GET_MODULE_HANDLE_EX_FLAG_FROM_ADDRESS          0x00000004
 
+#endif // !_INC_WINDOWS
 #endif // !DACCESS_COMPILE
 
+typedef UInt64 REGHANDLE;
+typedef UInt64 TRACEHANDLE;
+
+#ifndef _EVNTPROV_H_
+struct EVENT_DATA_DESCRIPTOR
+{
+    UInt64  Ptr;
+    UInt32  Size;
+    UInt32  Reserved;
+};
+
+struct EVENT_DESCRIPTOR
+{
+    UInt16  Id;
+    UInt8   Version;
+    UInt8   Channel;
+    UInt8   Level;
+    UInt8   Opcode;
+    UInt16  Task;
+    UInt64  Keyword;
+
+};
+
+struct EVENT_FILTER_DESCRIPTOR
+{
+    UInt64  Ptr;
+    UInt32  Size;
+    UInt32  Type;
+};
+
+__forceinline
+void
+EventDataDescCreate(_Out_ EVENT_DATA_DESCRIPTOR * EventDataDescriptor, _In_opt_ const void * DataPtr, UInt32 DataSize)
+{
+    EventDataDescriptor->Ptr = (UInt64)DataPtr;
+    EventDataDescriptor->Size = DataSize;
+    EventDataDescriptor->Reserved = 0;
+}
+#endif // _EVNTPROV_H_
+
+#ifndef GCENV_INCLUDED
+extern GCSystemInfo g_SystemInfo;
+
 #define REDHAWK_PALIMPORT EXTERN_C
+#define REDHAWK_PALAPI __stdcall
+#endif // GCENV_INCLUDED
+
+bool InitializeSystemInfo();
 
 #ifndef DACCESS_COMPILE
 
@@ -608,54 +673,48 @@ typedef IntNative (WINAPI *FARPROC)();
 #define CaptureStackBackTrace RtlCaptureStackBackTrace
 #endif
 
-
+#ifndef _INC_WINDOWS
 // Include the list of external functions we wish to access. If we do our job 100% then it will be
 // possible to link without any direct reference to any Win32 library.
 #include "PalRedhawkFunctions.h"
-
-#endif
+#endif // !_INC_WINDOWS
+#endif // !DACCESS_COMPILE
 
 // The Redhawk PAL must be initialized before any of its exports can be called. Returns true for a successful
 // initialization and false on failure.
-REDHAWK_PALIMPORT bool __stdcall PalInit();
+REDHAWK_PALIMPORT bool REDHAWK_PALAPI PalInit();
 
 // Given a mask of capabilities return true if all of them are supported by the current PAL.
-REDHAWK_PALIMPORT bool __stdcall PalHasCapability(PalCapability capability);
+REDHAWK_PALIMPORT bool REDHAWK_PALAPI PalHasCapability(PalCapability capability);
 
 #ifndef APP_LOCAL_RUNTIME
 // Have to define this manually because Win32 doesn't always define this API (and the automatic inclusion
 // above will generate direct forwarding entries to the OS libraries on Win32). Use the capability interface
 // defined above to determine whether this API is callable on your platform.
-REDHAWK_PALIMPORT UInt32 __stdcall PalGetCurrentProcessorNumber();
+REDHAWK_PALIMPORT UInt32 REDHAWK_PALAPI PalGetCurrentProcessorNumber();
 #endif
 
 // Given the OS handle of a loaded module, compute the upper and lower virtual address bounds (inclusive).
-REDHAWK_PALIMPORT void __stdcall PalGetModuleBounds(HANDLE hOsHandle, _Out_ UInt8 ** ppLowerBound, _Out_ UInt8 ** ppUpperBound);
+REDHAWK_PALIMPORT void REDHAWK_PALAPI PalGetModuleBounds(HANDLE hOsHandle, _Out_ UInt8 ** ppLowerBound, _Out_ UInt8 ** ppUpperBound);
 
-#ifdef DACCESS_COMPILE
 typedef struct _GUID GUID;
-#else
-struct GUID;
-#endif // DACCESS_COMPILE
-REDHAWK_PALIMPORT void __stdcall PalGetPDBInfo(HANDLE hOsHandle, _Out_ GUID * pGuidSignature, _Out_ UInt32 * pdwAge, _Out_writes_z_(cchPath) WCHAR * wszPath, Int32 cchPath);
+REDHAWK_PALIMPORT void REDHAWK_PALAPI PalGetPDBInfo(HANDLE hOsHandle, _Out_ GUID * pGuidSignature, _Out_ UInt32 * pdwAge, _Out_writes_z_(cchPath) WCHAR * wszPath, Int32 cchPath);
 
 #ifndef APP_LOOCAL_RUNTIME
-REDHAWK_PALIMPORT bool __stdcall PalGetThreadContext(HANDLE hThread, _Out_ PAL_LIMITED_CONTEXT * pCtx);
+REDHAWK_PALIMPORT bool REDHAWK_PALAPI PalGetThreadContext(HANDLE hThread, _Out_ PAL_LIMITED_CONTEXT * pCtx);
 #endif
 
-REDHAWK_PALIMPORT Int32 __stdcall PalGetProcessCpuCount();
+REDHAWK_PALIMPORT Int32 REDHAWK_PALAPI PalGetProcessCpuCount();
 
-REDHAWK_PALIMPORT UInt32 __stdcall PalReadFileContents(_In_ const WCHAR *, _Out_ char * buff, _In_ UInt32 maxBytesToRead);
-
-REDHAWK_PALIMPORT void __stdcall PalYieldProcessor();
+REDHAWK_PALIMPORT UInt32 REDHAWK_PALAPI PalReadFileContents(_In_z_ const TCHAR *, _Out_writes_all_(maxBytesToRead) char * buff, _In_ UInt32 maxBytesToRead);
 
 // Retrieves the entire range of memory dedicated to the calling thread's stack.  This does
 // not get the current dynamic bounds of the stack, which can be significantly smaller than 
 // the maximum bounds.
-REDHAWK_PALIMPORT bool __stdcall PalGetMaximumStackBounds(_Out_ void** ppStackLowOut, _Out_ void** ppStackHighOut);
+REDHAWK_PALIMPORT bool REDHAWK_PALAPI PalGetMaximumStackBounds(_Out_ void** ppStackLowOut, _Out_ void** ppStackHighOut);
 
 // Return value:  number of characters in name string
-REDHAWK_PALIMPORT Int32 PalGetModuleFileName(_Out_ wchar_t** pModuleNameOut, HANDLE moduleBase);
+REDHAWK_PALIMPORT Int32 PalGetModuleFileName(_Out_ const TCHAR** pModuleNameOut, HANDLE moduleBase);
 
 // Various intrinsic declarations needed for the PalGetCurrentTEB implementation below.
 #if defined(_X86_)
@@ -667,6 +726,9 @@ EXTERN_C unsigned __int64  __readgsqword(unsigned long Offset);
 #elif defined(_ARM_)
 EXTERN_C unsigned int _MoveFromCoprocessor(unsigned int, unsigned int, unsigned int, unsigned int, unsigned int);
 #pragma intrinsic(_MoveFromCoprocessor)
+#elif defined(_ARM64_)
+EXTERN_C unsigned __int64 __getReg(int);
+#pragma intrinsic(__getReg)
 #else
 #error Unsupported architecture
 #endif
@@ -680,18 +742,18 @@ inline UInt8 * PalNtCurrentTeb()
     return (UInt8*)__readgsqword(0x30);
 #elif defined(_ARM_)
     return (UInt8*)_MoveFromCoprocessor(15, 0, 13,  0, 2);
+#elif defined(_ARM64_)
+    return (UInt8*)__getReg(18);
 #else
 #error Unsupported architecture
 #endif
 }
 
 // Offsets of ThreadLocalStoragePointer in the TEB.
-#if defined(_X86_) || defined(_ARM_)
-#define OFFSETOF__TEB__ThreadLocalStoragePointer 0x2c
-#elif defined(_AMD64_)
+#if defined(BIT64)
 #define OFFSETOF__TEB__ThreadLocalStoragePointer 0x58
 #else
-#error Unsupported architecture
+#define OFFSETOF__TEB__ThreadLocalStoragePointer 0x2c
 #endif
 
 //
@@ -705,194 +767,58 @@ inline UInt8 * PalNtCurrentTeb()
 EXTERN_C void * __cdecl _alloca(size_t);
 #pragma intrinsic(_alloca)
 
-EXTERN_C long __cdecl _InterlockedIncrement(long volatile *);
-#pragma intrinsic(_InterlockedIncrement)
-FORCEINLINE Int32 PalInterlockedIncrement(_Inout_ _Interlocked_operand_ Int32 volatile *pDst)
-{
-    return _InterlockedIncrement((long volatile *)pDst);
-}
-
-EXTERN_C long __cdecl _InterlockedDecrement(long volatile *);
-#pragma intrinsic(_InterlockedDecrement)
-FORCEINLINE Int32 PalInterlockedDecrement(_Inout_ _Interlocked_operand_ Int32 volatile *pDst)
-{
-    return _InterlockedDecrement((long volatile *)pDst);
-}
-
-EXTERN_C long _InterlockedOr(long volatile *, long);
-#pragma intrinsic(_InterlockedOr)
-FORCEINLINE UInt32 PalInterlockedOr(_Inout_ _Interlocked_operand_ UInt32 volatile *pDst, UInt32 iValue)
-{
-    return _InterlockedOr((long volatile *)pDst, iValue);
-}
-
-EXTERN_C long _InterlockedAnd(long volatile *, long);
-#pragma intrinsic(_InterlockedAnd)
-FORCEINLINE UInt32 PalInterlockedAnd(_Inout_ _Interlocked_operand_ UInt32 volatile *pDst, UInt32 iValue)
-{
-    return _InterlockedAnd((long volatile *)pDst, iValue);
-}
-
-EXTERN_C long __PN__MACHINECALL_CDECL_OR_DEFAULT _InterlockedExchange(long volatile *, long);
-#pragma intrinsic(_InterlockedExchange)
-FORCEINLINE Int32 PalInterlockedExchange(_Inout_ _Interlocked_operand_ Int32 volatile *pDst, Int32 iValue)
-{
-    return _InterlockedExchange((long volatile *)pDst, iValue);
-}
-
-EXTERN_C long __PN__MACHINECALL_CDECL_OR_DEFAULT _InterlockedCompareExchange(long volatile *, long, long);
-#pragma intrinsic(_InterlockedCompareExchange)
-FORCEINLINE Int32 PalInterlockedCompareExchange(_Inout_ _Interlocked_operand_ Int32 volatile *pDst, Int32 iValue, Int32 iComperand)
-{
-    return _InterlockedCompareExchange((long volatile *)pDst, iValue, iComperand);
-}
-
-EXTERN_C Int64 _InterlockedCompareExchange64(Int64 volatile *, Int64, Int64);
-#pragma intrinsic(_InterlockedCompareExchange64)
-FORCEINLINE Int64 PalInterlockedCompareExchange64(_Inout_ _Interlocked_operand_ Int64 volatile *pDst, Int64 iValue, Int64 iComperand)
-{
-    return _InterlockedCompareExchange64(pDst, iValue, iComperand);
-}
-
-#if defined(_AMD64_)
-EXTERN_C UInt8 _InterlockedCompareExchange128(Int64 volatile *, Int64, Int64, Int64 *);
-#pragma intrinsic(_InterlockedCompareExchange128)
-FORCEINLINE UInt8 PalInterlockedCompareExchange128(_Inout_ _Interlocked_operand_ Int64 volatile *pDst, Int64 iValueHigh, Int64 iValueLow, Int64 *pComperand)
-{
-    return _InterlockedCompareExchange128(pDst, iValueHigh, iValueLow, pComperand);
-}
-#endif // _AMD64_
-
-#if defined(_X86_) || defined(_ARM_)
-
-#define PalInterlockedExchangePointer(_pDst, _pValue) \
-    ((void *)_InterlockedExchange((long volatile *)(_pDst), (long)(size_t)(_pValue)))
-
-#define PalInterlockedCompareExchangePointer(_pDst, _pValue, _pComperand) \
-    ((void *)_InterlockedCompareExchange((long volatile *)(_pDst), (long)(size_t)(_pValue), (long)(size_t)(_pComperand)))
-
-#elif defined(_AMD64_)
-
-EXTERN_C void * _InterlockedExchangePointer(void * volatile *, void *);
-#pragma intrinsic(_InterlockedExchangePointer)
-FORCEINLINE void * PalInterlockedExchangePointer(_Inout_ _Interlocked_operand_ void * volatile *pDst, _In_ void *pValue)
-{
-    return _InterlockedExchangePointer((void * volatile *)pDst, pValue);
-}
-
-EXTERN_C void * _InterlockedCompareExchangePointer(void * volatile *, void *, void *);
-#pragma intrinsic(_InterlockedCompareExchangePointer)
-FORCEINLINE void * PalInterlockedCompareExchangePointer(_Inout_ _Interlocked_operand_ void * volatile *pDst, _In_ void *pValue, _In_ void *pComperand)
-{
-    return _InterlockedCompareExchangePointer((void * volatile *)pDst, pValue, pComperand);
-}
-
-#else
-#error Unsupported architecture
-#endif
-
-
-#if defined(_X86_)
-
-#define PalYieldProcessor() __asm { rep nop }
-
-FORCEINLINE void PalMemoryBarrier()
-{
-    Int32 Barrier;
-    __asm {
-        xchg Barrier, eax
-    }
-}
-
-#elif defined(_AMD64_)
-
-EXTERN_C void _mm_pause();
-#pragma intrinsic(_mm_pause)
-#define PalYieldProcessor() _mm_pause()
-
-EXTERN_C void __faststorefence();
-#pragma intrinsic(__faststorefence)
-#define PalMemoryBarrier() __faststorefence()
-
-#elif defined(_ARM_)
-
-FORCEINLINE void PalYieldProcessor() {}
-
-EXTERN_C void __emit(const unsigned __int32 opcode);
-#pragma intrinsic(__emit)
-#define PalMemoryBarrier() { __emit(0xF3BF); __emit(0x8F5F); }
-
-#else
-#error Unsupported architecture
-#endif
-
-//
-// Export PAL blessed versions of *printf functions we use (mostly debug only).
-//
-REDHAWK_PALIMPORT void __cdecl PalPrintf(_In_z_ _Printf_format_string_ const char * szFormat, ...);
-REDHAWK_PALIMPORT void __cdecl PalFlushStdout();
-
-#ifndef DACCESS_COMPILE
-REDHAWK_PALIMPORT int __cdecl PalSprintf(_Out_writes_z_(cchBuffer) char * szBuffer, size_t cchBuffer, _In_z_ _Printf_format_string_ const char * szFormat, ...);
-REDHAWK_PALIMPORT int __cdecl PalVSprintf(_Out_writes_z_(cchBuffer) char * szBuffer, size_t cchBuffer, _In_z_ _Printf_format_string_ const char * szFormat, va_list args);
-#else
-#define PalSprintf sprintf_s
-#define PalVSprintf vsprintf_s
-#endif
-
-#ifndef DACCESS_COMPILE 
-
-// An annoying side-effect of enabling full compiler warnings is that it complains about constant expressions
-// in control flow predicates. These happen to be useful in certain macros, such as the va_start definitions
-// below. The following macros will allow the warning to be turned off for the duration of the macro expansion
-// only. If this finds broader use we can consider moving them to a more global location.
-#define ALLOW_CONSTANT_EXPR_BEGIN __pragma(warning(push)) __pragma(warning(disable:4127))
-#define ALLOW_CONSTANT_EXPR_END __pragma(warning(pop))
-
-REDHAWK_PALIMPORT UInt32_BOOL __stdcall PalGlobalMemoryStatusEx(_Out_ PAL_MEMORY_STATUS* pBuffer);
-REDHAWK_PALIMPORT _Ret_maybenull_ _Post_writable_byte_size_(size) void* __stdcall PalVirtualAlloc(_In_opt_ void* pAddress, UIntNative size, UInt32 allocationType, UInt32 protect);
-REDHAWK_PALIMPORT UInt32_BOOL __stdcall PalVirtualFree(_In_ void* pAddress, UIntNative size, UInt32 freeType);
-REDHAWK_PALIMPORT void __stdcall PalSleep(UInt32 milliseconds);
-REDHAWK_PALIMPORT UInt32_BOOL __stdcall PalSwitchToThread();
-REDHAWK_PALIMPORT HANDLE __stdcall PalCreateMutexW(_In_opt_ LPSECURITY_ATTRIBUTES pMutexAttributes, UInt32_BOOL initialOwner, _In_opt_z_ LPCWSTR pName);
-REDHAWK_PALIMPORT HANDLE __stdcall PalCreateEventW(_In_opt_ LPSECURITY_ATTRIBUTES pMutexAttributes, UInt32_BOOL manualReset, UInt32_BOOL initialState, _In_opt_z_ LPCWSTR pName);
-REDHAWK_PALIMPORT UInt32 __stdcall PalGetTickCount();
-REDHAWK_PALIMPORT HANDLE __stdcall PalCreateFileW(_In_z_ LPCWSTR pFileName, UInt32 desiredAccess, UInt32 shareMode, _In_opt_ void* pSecurityAttributes, UInt32 creationDisposition, UInt32 flagsAndAttributes, HANDLE hTemplateFile);
-REDHAWK_PALIMPORT UInt32 __stdcall PalGetWriteWatch(UInt32 flags, _In_ void* pBaseAddress, UIntNative regionSize, _Out_writes_to_opt_(*pCount, *pCount) void** pAddresses, _Inout_opt_ UIntNative* pCount, _Inout_opt_ UInt32* pGranularity);
-REDHAWK_PALIMPORT UInt32 __stdcall PalResetWriteWatch(void* pBaseAddress, UIntNative regionSize);
-REDHAWK_PALIMPORT HANDLE __stdcall PalCreateLowMemoryNotification();
-REDHAWK_PALIMPORT void __stdcall PalTerminateCurrentProcess(UInt32 exitCode);
-REDHAWK_PALIMPORT HANDLE __stdcall PalGetModuleHandleFromPointer(_In_ void* pointer);
+REDHAWK_PALIMPORT _Ret_maybenull_ _Post_writable_byte_size_(size) void* REDHAWK_PALAPI PalVirtualAlloc(_In_opt_ void* pAddress, UIntNative size, UInt32 allocationType, UInt32 protect);
+REDHAWK_PALIMPORT UInt32_BOOL REDHAWK_PALAPI PalVirtualFree(_In_ void* pAddress, UIntNative size, UInt32 freeType);
+REDHAWK_PALIMPORT void REDHAWK_PALAPI PalSleep(UInt32 milliseconds);
+REDHAWK_PALIMPORT UInt32_BOOL REDHAWK_PALAPI PalSwitchToThread();
+REDHAWK_PALIMPORT HANDLE REDHAWK_PALAPI PalCreateEventW(_In_opt_ LPSECURITY_ATTRIBUTES pEventAttributes, UInt32_BOOL manualReset, UInt32_BOOL initialState, _In_opt_z_ LPCWSTR pName);
+REDHAWK_PALIMPORT UInt32 REDHAWK_PALAPI PalGetTickCount();
+REDHAWK_PALIMPORT HANDLE REDHAWK_PALAPI PalCreateFileW(_In_z_ LPCWSTR pFileName, uint32_t desiredAccess, uint32_t shareMode, _In_opt_ void* pSecurityAttributes, uint32_t creationDisposition, uint32_t flagsAndAttributes, HANDLE hTemplateFile);
+REDHAWK_PALIMPORT HANDLE REDHAWK_PALAPI PalCreateLowMemoryNotification();
+REDHAWK_PALIMPORT void REDHAWK_PALAPI PalTerminateCurrentProcess(UInt32 exitCode);
+REDHAWK_PALIMPORT HANDLE REDHAWK_PALAPI PalGetModuleHandleFromPointer(_In_ void* pointer);
 
 #ifndef APP_LOCAL_RUNTIME
-REDHAWK_PALIMPORT void* __stdcall PalAddVectoredExceptionHandler(UInt32 firstHandler, _In_ PVECTORED_EXCEPTION_HANDLER vectoredHandler);
+REDHAWK_PALIMPORT void* REDHAWK_PALAPI PalAddVectoredExceptionHandler(UInt32 firstHandler, _In_ PVECTORED_EXCEPTION_HANDLER vectoredHandler);
 #endif
 
 typedef UInt32 (__stdcall *BackgroundCallback)(_In_opt_ void* pCallbackContext);
-REDHAWK_PALIMPORT UInt32_BOOL __stdcall PalStartBackgroundGCThread(_In_ BackgroundCallback callback, _In_opt_ void* pCallbackContext);
-REDHAWK_PALIMPORT UInt32_BOOL __stdcall PalStartFinalizerThread(_In_ BackgroundCallback callback, _In_opt_ void* pCallbackContext);
+REDHAWK_PALIMPORT bool REDHAWK_PALAPI PalStartBackgroundGCThread(_In_ BackgroundCallback callback, _In_opt_ void* pCallbackContext);
+REDHAWK_PALIMPORT bool REDHAWK_PALAPI PalStartFinalizerThread(_In_ BackgroundCallback callback, _In_opt_ void* pCallbackContext);
 
 typedef UInt32 (__stdcall *PalHijackCallback)(HANDLE hThread, _In_ PAL_LIMITED_CONTEXT* pThreadContext, _In_opt_ void* pCallbackContext);
-REDHAWK_PALIMPORT UInt32 __stdcall PalHijack(HANDLE hThread, _In_ PalHijackCallback callback, _In_opt_ void* pCallbackContext);
+REDHAWK_PALIMPORT UInt32 REDHAWK_PALAPI PalHijack(HANDLE hThread, _In_ PalHijackCallback callback, _In_opt_ void* pCallbackContext);
 
 #ifdef FEATURE_ETW
-REDHAWK_PALIMPORT UInt32_BOOL __stdcall PalEventEnabled(REGHANDLE regHandle, _In_ const EVENT_DESCRIPTOR* eventDescriptor);
+REDHAWK_PALIMPORT bool REDHAWK_PALAPI PalEventEnabled(REGHANDLE regHandle, _In_ const EVENT_DESCRIPTOR* eventDescriptor);
 #endif
 
-inline void PalDebugBreak() { __debugbreak(); }
+void PalDebugBreak();
 
-REDHAWK_PALIMPORT UInt32 __stdcall PalGetLogicalCpuCount();
-REDHAWK_PALIMPORT size_t __stdcall PalGetLargestOnDieCacheSize(UInt32_BOOL bTrueSize);
+REDHAWK_PALIMPORT UInt32 REDHAWK_PALAPI PalGetLogicalCpuCount();
+REDHAWK_PALIMPORT size_t REDHAWK_PALAPI PalGetLargestOnDieCacheSize(UInt32_BOOL bTrueSize);
 
-REDHAWK_PALIMPORT _Ret_maybenull_ void* __stdcall PalSetWerDataBuffer(_In_ void* pNewBuffer);
+REDHAWK_PALIMPORT _Ret_maybenull_ void* REDHAWK_PALAPI PalSetWerDataBuffer(_In_ void* pNewBuffer);
 
-REDHAWK_PALIMPORT UInt32_BOOL __stdcall PalAllocateThunksFromTemplate(_In_ HANDLE hTemplateModule, UInt32 templateRva, size_t templateSize, _Outptr_result_bytebuffer_(templateSize) void** newThunksOut);
+REDHAWK_PALIMPORT UInt32_BOOL REDHAWK_PALAPI PalAllocateThunksFromTemplate(_In_ HANDLE hTemplateModule, UInt32 templateRva, size_t templateSize, _Outptr_result_bytebuffer_(templateSize) void** newThunksOut);
 
-REDHAWK_PALIMPORT UInt32 __stdcall PalCompatibleWaitAny(UInt32_BOOL alertable, UInt32 timeout, UInt32 count, HANDLE* pHandles, UInt32_BOOL allowReentrantWait);
+REDHAWK_PALIMPORT UInt32 REDHAWK_PALAPI PalCompatibleWaitAny(UInt32_BOOL alertable, UInt32 timeout, UInt32 count, HANDLE* pHandles, UInt32_BOOL allowReentrantWait);
 
-REDHAWK_PALIMPORT size_t __cdecl wcslen(const wchar_t *str);
+REDHAWK_PALIMPORT void REDHAWK_PALAPI PalAttachThread(void* thread);
+REDHAWK_PALIMPORT bool REDHAWK_PALAPI PalDetachThread(void* thread);
 
-REDHAWK_PALIMPORT Int32 __cdecl _wcsicmp(const wchar_t *string1, const wchar_t *string2);
-#endif // !DACCESS_COMPILE
+REDHAWK_PALIMPORT UInt64 PalGetCurrentThreadIdForLogging();
+
+#ifdef PLATFORM_UNIX
+REDHAWK_PALIMPORT Int32 __cdecl _stricmp(const char *string1, const char *string2);
+#endif // PLATFORM_UNIX
+
+#ifdef UNICODE
+#define _tcsicmp _wcsicmp
+#else
+#define _tcsicmp _stricmp
+#endif
+
+#include "PalRedhawkInline.h"
 
 #endif // !PAL_REDHAWK_INCLUDED

@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 #define DEBUG // Do not remove this, it is needed to retain calls to these conditional methods in release builds
 
@@ -25,14 +26,13 @@ namespace System.Diagnostics
         }
 
         [System.Diagnostics.Conditional("DEBUG")]
-        [System.Security.SecuritySafeCritical]
         public static void Assert(bool condition, string message, string detailMessage)
         {
             if (!condition)
             {
 #if CORERT
                 // CORERT-TODO
-                unsafe { *(int *)0 = 0; }
+                unsafe { *(int*)0 = 0; }
 #else
                 string stackTrace;
 

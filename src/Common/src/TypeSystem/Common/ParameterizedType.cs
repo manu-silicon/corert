@@ -1,13 +1,14 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 
 namespace Internal.TypeSystem
 {
-    public abstract class ParameterizedType : TypeDesc
+    public abstract partial class ParameterizedType : TypeDesc
     {
-        TypeDesc _parameterType;
+        private TypeDesc _parameterType;
 
         internal ParameterizedType(TypeDesc parameterType)
         {
@@ -24,8 +25,8 @@ namespace Internal.TypeSystem
 
         public override TypeSystemContext Context
         {
-            get 
-            { 
+            get
+            {
                 return _parameterType.Context;
             }
         }

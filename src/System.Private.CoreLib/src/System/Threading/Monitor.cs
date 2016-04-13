@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*=============================================================================
 **
@@ -60,27 +61,17 @@ namespace System.Threading
 
         public static void Enter(Object obj)
         {
-#if CORERT
-            // CORERT-TODO locks
-            return;
-#else
             Lock lck = GetLock(obj);
             if (lck.TryAcquire(0))
                 return;
             TryAcquireContended(lck, obj, Timeout.Infinite);
-            return;
-#endif
         }
 
         public static void Enter(Object obj, ref bool lockTaken)
         {
             if (lockTaken)
                 throw new ArgumentException(SR.Argument_MustBeFalse, "lockTaken");
-#if CORERT
-            // CORERT-TODO locks
-            lockTaken = true;
-            return;
-#else
+
             Lock lck = GetLock(obj);
             if (lck.TryAcquire(0))
             {
@@ -89,30 +80,19 @@ namespace System.Threading
             }
             TryAcquireContended(lck, obj, Timeout.Infinite);
             lockTaken = true;
-            return;
-#endif
         }
 
         public static bool TryEnter(Object obj)
         {
-#if CORERT
-            // CORERT-TODO locks
-            return true;
-#else
             return GetLock(obj).TryAcquire(0);
-#endif
         }
 
         public static void TryEnter(Object obj, ref bool lockTaken)
         {
             if (lockTaken)
                 throw new ArgumentException(SR.Argument_MustBeFalse, "lockTaken");
-#if CORERT 
-            // CORERT-TODO locks
-            lockTaken = true;
-#else
+
             lockTaken = GetLock(obj).TryAcquire(0);
-#endif
         }
 
         public static bool TryEnter(Object obj, int millisecondsTimeout)
@@ -120,15 +100,10 @@ namespace System.Threading
             if (millisecondsTimeout < -1)
                 throw new ArgumentOutOfRangeException("millisecondsTimeout", SR.ArgumentOutOfRange_NeedNonNegOrNegative1);
 
-#if CORERT 
-            // CORERT-TODO locks
-            return true;
-#else
             Lock lck = GetLock(obj);
             if (lck.TryAcquire(0))
                 return true;
             return TryAcquireContended(lck, obj, millisecondsTimeout);
-#endif
         }
 
         public static void TryEnter(Object obj, int millisecondsTimeout, ref bool lockTaken)
@@ -138,11 +113,6 @@ namespace System.Threading
             if (millisecondsTimeout < -1)
                 throw new ArgumentOutOfRangeException("millisecondsTimeout", SR.ArgumentOutOfRange_NeedNonNegOrNegative1);
 
-#if CORERT
-            // CORERT-TODO locks
-            lockTaken = true;
-            return;
-#else
             Lock lck = GetLock(obj);
             if (lck.TryAcquire(0))
             {
@@ -150,8 +120,6 @@ namespace System.Threading
                 return;
             }
             lockTaken = TryAcquireContended(lck, obj, millisecondsTimeout);
-            return;
-#endif
         }
 
         public static bool TryEnter(Object obj, TimeSpan timeout)
@@ -161,15 +129,10 @@ namespace System.Threading
                 throw new ArgumentOutOfRangeException("timeout", SR.ArgumentOutOfRange_NeedNonNegOrNegative1);
             int millisecondsTimeout = (int)tm;
 
-#if CORERT
-            // CORERT-TODO locks
-            return true;
-#else
             Lock lck = GetLock(obj);
             if (lck.TryAcquire(0))
                 return true;
             return lck.TryAcquire(millisecondsTimeout);
-#endif
         }
 
         public static void TryEnter(Object obj, TimeSpan timeout, ref bool lockTaken)
@@ -181,11 +144,6 @@ namespace System.Threading
                 throw new ArgumentOutOfRangeException("timeout", SR.ArgumentOutOfRange_NeedNonNegOrNegative1);
             int millisecondsTimeout = (int)tm;
 
-#if CORERT
-            // CORERT-TODO locks
-            lockTaken = true;
-            return;
-#else
             Lock lck = GetLock(obj);
             if (lck.TryAcquire(0))
             {
@@ -194,17 +152,11 @@ namespace System.Threading
             }
 
             lockTaken = TryAcquireContended(lck, obj, millisecondsTimeout);
-            return;
-#endif
         }
 
         public static void Exit(Object obj)
         {
-#if CORERT
-            // CORERT-TODO locks
-#else
             GetLock(obj).Release();
-#endif
         }
 
         public static bool IsEntered(Object obj)

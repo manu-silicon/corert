@@ -1,5 +1,8 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+
+using System.Collections.Generic;
 
 namespace Internal.TypeSystem
 {
@@ -15,6 +18,24 @@ namespace Internal.TypeSystem
                 return GetStaticConstructor() != null;
             }
         }
+
+        public override bool HasFinalizer
+        {
+            get
+            {
+                return GetFinalizer() != null;
+            }
+        }
+
+        /// <summary>
+        /// Gets the name of the type as represented in the metadata.
+        /// </summary>
+        public abstract string Name { get; }
+
+        /// <summary>
+        /// Gets the namespace of the type.
+        /// </summary>
+        public abstract string Namespace { get; }
 
         /// <summary>
         /// Gets metadata that controls instance layout of this type.
@@ -43,7 +64,18 @@ namespace Internal.TypeSystem
         /// If true, this is the special &lt;Module&gt; type that contains the definitions
         /// of global fields and methods in the module.
         /// </summary>
-        public abstract bool IsModuleType { get; }
+        public bool IsModuleType
+        {
+            get
+            {
+                return Module.GetGlobalModuleType() == this;
+            }
+        }
+
+        /// <summary>
+        /// Gets the module that defines this type.
+        /// </summary>
+        public abstract ModuleDesc Module { get; }
 
         /// <summary>
         /// Same as <see cref="TypeDesc.BaseType"/>, but the result is a MetadataType (avoids casting).
@@ -79,6 +111,21 @@ namespace Internal.TypeSystem
                 return new InstantiatedType(this, typeInstantiation);
             }
         }
+        
+        /// <summary>
+        /// Gets the containing type of this type or null if the type is not nested.
+        /// </summary>
+        public abstract MetadataType ContainingType { get; }
+
+        /// <summary>
+        /// Get all of the types nested in this type.
+        /// </summary>
+        public abstract IEnumerable<MetadataType> GetNestedTypes();
+
+        /// <summary>
+        /// Get a specific type nested in this type.
+        /// </summary>
+        public abstract MetadataType GetNestedType(string name);
     }
 
     public struct ClassLayoutMetadata

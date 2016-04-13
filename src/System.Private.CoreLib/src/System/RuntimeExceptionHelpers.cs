@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.IO;
@@ -228,7 +229,7 @@ namespace System
         // fatal process shutdowns and it's only purpose is a reasonable-case effort to make a bad situation a little less bad.
         // Trying to use locks or other concurrent access apis would actually defeat the purpose of making FailFast as robust as possible.
         private static bool s_inFailFast;
-        
+
 #pragma warning disable 414 // field is assigned, but never used -- This is because C# doesn't realize that we
         //                                      copy the field into a buffer.
         /// <summary>
@@ -249,7 +250,7 @@ namespace System
                 _bufferByteCount = cbBuffer;
             }
         }
-        
+
         /// <summary>
         /// This header describes the contents of the serialized error report to DAC, which can deserialize it
         /// from a dump file or live debugging session.  This format is easier to change than the 

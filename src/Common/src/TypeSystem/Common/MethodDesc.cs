@@ -1,9 +1,11 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Diagnostics;
 using System.Runtime.CompilerServices;
+using Internal.NativeFormat;
 
 namespace Internal.TypeSystem
 {
@@ -39,7 +41,7 @@ namespace Internal.TypeSystem
                 return _flags;
             }
         }
-       
+
         public bool IsStatic
         {
             get
@@ -136,11 +138,11 @@ namespace Internal.TypeSystem
 
     public struct MethodSignatureBuilder
     {
-        MethodSignature _template;
-        MethodSignatureFlags _flags;
-        int _genericParameterCount;
-        TypeDesc _returnType;
-        TypeDesc[] _parameters;
+        private MethodSignature _template;
+        private MethodSignatureFlags _flags;
+        private int _genericParameterCount;
+        private TypeDesc _returnType;
+        private TypeDesc[] _parameters;
 
         public MethodSignatureBuilder(MethodSignature template)
         {
@@ -199,8 +201,8 @@ namespace Internal.TypeSystem
         public MethodSignature ToSignature()
         {
             if (_template == null ||
-                _flags != _template._flags || 
-                _genericParameterCount != _template._genericParameterCount || 
+                _flags != _template._flags ||
+                _genericParameterCount != _template._genericParameterCount ||
                 _returnType != _template._returnType ||
                 _parameters != _template._parameters)
             {
@@ -215,14 +217,48 @@ namespace Internal.TypeSystem
     {
         public readonly static MethodDesc[] EmptyMethods = new MethodDesc[0];
 
-        public override int GetHashCode()
+        private int _hashcode;
+
+        /// <summary>
+        /// Use to allow objects to have their hashcode computed
+        /// independently of the allocation of a MethodDesc object
+        /// For instance, compute the hashcode when looking up the object,
+        /// then when creating the object, pass in the hashcode directly.
+        /// The hashcode specified MUST exactly match the algorithm implemented
+        /// on this type normally.
+        /// </summary>
+        public void SetHashCode(int hashcode)
         {
-            // Inherited types are expected to override
-            return RuntimeHelpers.GetHashCode(this);
+            _hashcode = hashcode;
+            Debug.Assert(hashcode == ComputeHashCode());
+        }
+
+        public sealed override int GetHashCode()
+        {
+            if (_hashcode != 0)
+                return _hashcode;
+
+            return AcquireHashCode();
+        }
+
+        private int AcquireHashCode()
+        {
+            _hashcode = ComputeHashCode();
+            return _hashcode;
+        }
+
+        /// <summary>
+        /// Compute HashCode. Should only be overriden by a MethodDesc that represents an instantiated method.
+        /// </summary>
+        protected virtual int ComputeHashCode()
+        {
+            return TypeHashingAlgorithms.ComputeMethodHashCode(OwningType.GetHashCode(), TypeHashingAlgorithms.ComputeNameHashCode(Name));
         }
 
         public override bool Equals(Object o)
         {
+            // Its only valid to compare two MethodDescs in the same context
+            Debug.Assert(Object.ReferenceEquals(o, null) || !(o is MethodDesc) || Object.ReferenceEquals(((MethodDesc)o).Context, this.Context));
             return Object.ReferenceEquals(this, o);
         }
 
@@ -323,6 +359,17 @@ namespace Internal.TypeSystem
             }
         }
 
+        /// <summary>
+        /// Gets a value indicating that this method cannot be overriden.
+        /// </summary>
+        public virtual bool IsFinal
+        {
+            get
+            {
+                return false;
+            }
+        }
+
         public abstract bool HasCustomAttribute(string attributeNamespace, string attributeName);
 
         // Strips method instantiation. E.g C<int>.m<string> -> C<int>.m<U>
@@ -355,14 +402,7 @@ namespace Internal.TypeSystem
 
         public virtual MethodDesc InstantiateSignature(Instantiation typeInstantiation, Instantiation methodInstantiation)
         {
-            MethodDesc method = this;
-
-            TypeDesc owningType = method.OwningType;
-            TypeDesc instantiatedOwningType = owningType.InstantiateSignature(typeInstantiation, methodInstantiation);
-            if (owningType != instantiatedOwningType)
-                method = instantiatedOwningType.Context.GetMethodForInstantiatedType(method.GetTypicalMethodDefinition(), (InstantiatedType)instantiatedOwningType);
-
-            Instantiation instantiation = method.Instantiation;
+            Instantiation instantiation = Instantiation;
             TypeDesc[] clone = null;
 
             for (int i = 0; i < instantiation.Length; i++)
@@ -383,7 +423,18 @@ namespace Internal.TypeSystem
                 }
             }
 
-            return (clone == null) ? method : method.Context.GetInstantiatedMethod(method.GetMethodDefinition(), new Instantiation(clone));
+            MethodDesc method = this;
+
+            TypeDesc owningType = method.OwningType;
+            TypeDesc instantiatedOwningType = owningType.InstantiateSignature(typeInstantiation, methodInstantiation);
+            if (owningType != instantiatedOwningType)
+            {
+                method = Context.GetMethodForInstantiatedType(method.GetTypicalMethodDefinition(), (InstantiatedType)instantiatedOwningType);
+                if (clone == null && instantiation.Length != 0)
+                    return Context.GetInstantiatedMethod(method, instantiation);
+            }
+
+            return (clone == null) ? method : Context.GetInstantiatedMethod(method.GetMethodDefinition(), new Instantiation(clone));
         }
     }
 }

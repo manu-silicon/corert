@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Diagnostics;
@@ -106,11 +107,51 @@ namespace System.Runtime
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhGetLastGCDuration")]
         internal static extern long RhGetLastGCDuration(int generation);
+
         //
         // calls for GCHandle.
         // These methods are needed to implement GCHandle class like functionality (optional)
         //
+#if CORERT
+        // Allocate handle.
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "RhpHandleAlloc")]
+        private static extern IntPtr RhpHandleAlloc(Object value, GCHandleType type);
 
+        internal static IntPtr RhHandleAlloc(Object value, GCHandleType type)
+        {
+            IntPtr h = RhpHandleAlloc(value, type);
+            if (h == IntPtr.Zero)
+                throw new OutOfMemoryException();
+            return h;
+        }
+
+        // Allocate handle for dependent handle case where a secondary can be set at the same time.
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "RhpHandleAllocDependent")]
+        private static extern IntPtr RhpHandleAllocDependent(Object primary, Object secondary);
+
+        internal static IntPtr RhHandleAllocDependent(Object primary, Object secondary)
+        {
+            IntPtr h = RhpHandleAllocDependent(primary, secondary);
+            if (h == IntPtr.Zero)
+                throw new OutOfMemoryException();
+            return h;
+        }
+
+        // Allocate variable handle with its initial type.
+        [MethodImpl(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "RhpHandleAllocVariable")]
+        private static extern IntPtr RhpHandleAllocVariable(Object value, uint type);
+
+        internal static IntPtr RhHandleAllocVariable(Object value, uint type)
+        {
+            IntPtr h = RhHandleAllocVariable(value, type);
+            if (h == IntPtr.Zero)
+                throw new OutOfMemoryException();
+            return h;
+        }
+#else // CORERT
         // Allocate handle.
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhHandleAlloc")]
@@ -125,6 +166,7 @@ namespace System.Runtime
         [MethodImpl(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhHandleAllocVariable")]
         internal static extern IntPtr RhHandleAllocVariable(Object value, uint type);
+#endif // CORERT
 
         // Free handle.
         [MethodImpl(MethodImplOptions.InternalCall)]
@@ -465,9 +507,21 @@ namespace System.Runtime
         [RuntimeImport(RuntimeLibrary, "RhFindBlob")]
         internal static unsafe extern bool RhFindBlob(IntPtr hOsModule, uint blobId, byte** ppbBlob, uint* pcbBlob);
 
+#if CORERT
+        internal static uint RhGetLoadedModules(IntPtr[] resultArray)
+        {
+            IntPtr[] loadedModules = Internal.Runtime.CompilerHelpers.StartupCodeHelpers.Modules;
+            if (resultArray != null)
+            {
+                Array.Copy(loadedModules, resultArray, Math.Min(loadedModules.Length, resultArray.Length));
+            }
+            return (uint)loadedModules.Length;
+        }
+#else
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhGetLoadedModules")]
         internal static extern uint RhGetLoadedModules(IntPtr[] resultArray);
+#endif
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhGetModuleFromPointer")]
@@ -489,7 +543,11 @@ namespace System.Runtime
         //
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhGetModuleFileName")]
+#if PLATFORM_UNIX
+        internal static extern unsafe int RhGetModuleFileName(IntPtr moduleHandle, out byte* moduleName);
+#else
         internal static extern unsafe int RhGetModuleFileName(IntPtr moduleHandle, out char* moduleName);
+#endif
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "RhGetExceptionsForCurrentThread")]
@@ -533,6 +591,33 @@ namespace System.Runtime
         [RuntimeImport(RuntimeLibrary, "RhBulkMoveWithWriteBarrier")]
         internal static extern unsafe void RhBulkMoveWithWriteBarrier(byte* dmem, byte* smem, int size);
 
+        // The GC conservative reporting descriptor is a special structure of data that the GC
+        // parses to determine whether there are specific regions of memory that it should not
+        // collect or move around.
+        // This can only be used to report memory regions on the current stack and the structure must itself 
+        // be located on the stack.
+        // This structure is contractually required to be 4 pointers in size. All details about
+        // the contents are abstracted into the runtime
+        // To use, place one of these structures on the stack, and then pass it by ref to a function
+        // which will pin the byref to create a pinned interior pointer.
+        // Then, call RhInitializeConservativeReportingRegion to mark the region as conservatively reported.
+        // When done, call RhDisableConservativeReportingRegion to disable conservative reporting, or
+        // simply let it be pulled off the stack.
+        internal struct ConservativelyReportedRegionDesc
+        {
+            IntPtr ptr1;
+            IntPtr ptr2;
+            IntPtr ptr3;
+            IntPtr ptr4;
+        }
+
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "RhInitializeConservativeReportingRegion")]
+        internal static extern unsafe void RhInitializeConservativeReportingRegion(ConservativelyReportedRegionDesc* regionDesc, void* bufferBegin, int cbBuffer);
+
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "RhDisableConservativeReportingRegion")]
+        internal static extern unsafe void RhDisableConservativeReportingRegion(ConservativelyReportedRegionDesc* regionDesc);
 
         //
         // ETW helpers.
@@ -549,10 +634,50 @@ namespace System.Runtime
         [RuntimeImport(RuntimeLibrary, "RhpEtwExceptionThrown")]
         internal extern static unsafe void RhpEtwExceptionThrown(char* exceptionTypeName, char* exceptionMessage, IntPtr faultingIP, long hresult);
 
+#if CORERT
+        //
+        // Interlocked helpers
+        //
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "RhpLockCmpXchg32")]
+        internal extern static int InterlockedCompareExchange(ref int location1, int value, int comparand);
+
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "RhpLockCmpXchg64")]
+        internal extern static long InterlockedCompareExchange(ref long location1, long value, long comparand);
+
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+#if BIT64
+        [RuntimeImport(RuntimeLibrary, "RhpLockCmpXchg64")]
+#else
+        [RuntimeImport(RuntimeLibrary, "RhpLockCmpXchg32")]
+#endif
+        internal extern static IntPtr InterlockedCompareExchange(ref IntPtr location1, IntPtr value, IntPtr comparand);
+
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "RhpCheckedLockCmpXchg")]
+        internal extern static object InterlockedCompareExchange(ref object location1, object value, object comparand);
+
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "RhpCheckedXchg")]
+        internal extern static object InterlockedExchange(ref object location1, object value);
+
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "RhpMemoryBarrier")]
+        internal extern static void MemoryBarrier();
+
+        [Intrinsic]
+        [MethodImplAttribute(MethodImplOptions.InternalCall)]
+        [RuntimeImport(RuntimeLibrary, "fabs")]
+        internal static extern double fabs(double x);
+#endif // CORERT
+
+#if !CORERT
         [Intrinsic]
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
         [RuntimeImport(RuntimeLibrary, "_copysign")]
         internal static extern double _copysign(double x, double y);
+#endif // !CORERT
 
         [Intrinsic]
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
@@ -649,9 +774,11 @@ namespace System.Runtime
         [RuntimeImport(RuntimeLibrary, "modf")]
         internal static unsafe extern double modf(double x, double* intptr);
 
+#if !PLATFORM_UNIX
         // ExactSpelling = 'true' to force MCG to resolve it to default
         [DllImport(RuntimeImports.RuntimeLibrary, ExactSpelling = true)]
         internal static unsafe extern void _ecvt_s(byte* buffer, int sizeInBytes, double value, int count, int* dec, int* sign);
+#endif
 
 #if BIT64
         [DllImport(RuntimeImports.RuntimeLibrary, ExactSpelling = true)]

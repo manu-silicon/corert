@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Globalization;
@@ -301,7 +302,6 @@ namespace System.Globalization
                 return (((ch) == 0x20) || ((ch) >= 0x09 && (ch) <= 0x0D));
             }
 
-            [System.Security.SecurityCritical]  // auto-generated
             private unsafe static char* MatchChars(char* p, string str)
             {
                 fixed (char* stringPointer = str)
@@ -309,7 +309,6 @@ namespace System.Globalization
                     return MatchChars(p, stringPointer);
                 }
             }
-            [System.Security.SecurityCritical]  // auto-generated
             private unsafe static char* MatchChars(char* p, char* str)
             {
                 Contract.Assert(p != null && str != null, "");
@@ -333,7 +332,6 @@ namespace System.Globalization
                 return p;
             }
 
-            [System.Security.SecurityCritical]  // auto-generated
             private unsafe static Boolean ParseNumber(ref char* str, NumberStyles options, ref NumberBuffer number, StringBuilder sb, NumberFormatInfo numfmt, Boolean parseDecimal)
             {
                 const Int32 StateSign = 0x0001;
@@ -582,7 +580,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Boolean TryStringToNumber(String str, NumberStyles options, ref NumberBuffer number, StringBuilder sb, NumberFormatInfo numfmt, Boolean parseDecimal)
             {
                 if (str == null)
@@ -650,7 +647,6 @@ namespace System.Globalization
 
             private static string s_posNumberFormat = "#";
 
-            [SecurityCritical]
             internal unsafe static void Int32ToDecChars(char* buffer, ref int index, uint value, int digits)
             {
                 while (--digits >= 0 || value != 0)
@@ -660,7 +656,6 @@ namespace System.Globalization
                 }
             }
 
-            [SecurityCritical]
             internal static unsafe char ParseFormatSpecifier(string format, out int digits)
             {
                 if (format != null)
@@ -702,7 +697,6 @@ namespace System.Globalization
                 return 'G';
             }
 
-            [SecurityCritical]
             internal static unsafe string NumberToString(NumberBuffer number, char format, int nMaxDigits, NumberFormatInfo info, bool isDecimal)
             {
                 int nMinDigits = -1;
@@ -841,7 +835,6 @@ namespace System.Globalization
                 return sb.ToString();
             }
 
-            [SecuritySafeCritical]
             private static void FormatCurrency(StringBuilder sb, NumberBuffer number, int nMinDigits, int nMaxDigits, NumberFormatInfo info)
             {
                 string fmt = number.sign ?
@@ -868,7 +861,6 @@ namespace System.Globalization
                 }
             }
 
-            [SecurityCritical]
             private static unsafe int wcslen(char* s)
             {
                 int result = 0;
@@ -877,7 +869,6 @@ namespace System.Globalization
                 return result;
             }
 
-            [SecurityCritical]
             private static unsafe void FormatFixed(StringBuilder sb, NumberBuffer number, int nMinDigits, int nMaxDigits, NumberFormatInfo info, int[] groupDigits, string sDecimal, string sGroup)
             {
                 int digPos = number.scale;
@@ -984,7 +975,6 @@ namespace System.Globalization
                 }
             }
 
-            [SecuritySafeCritical]
             private static void FormatNumber(StringBuilder sb, NumberBuffer number, int nMinDigits, int nMaxDigits, NumberFormatInfo info)
             {
                 string fmt = number.sign ?
@@ -1008,7 +998,6 @@ namespace System.Globalization
                 }
             }
 
-            [SecurityCritical]
             private static unsafe void FormatScientific(StringBuilder sb, NumberBuffer number, int nMinDigits, int nMaxDigits, NumberFormatInfo info, char expChar)
             {
                 char* dig = number.digits;
@@ -1025,7 +1014,6 @@ namespace System.Globalization
                 FormatExponent(sb, info, e, expChar, 3, true);
             }
 
-            [SecurityCritical]
             private static unsafe void FormatExponent(StringBuilder sb, NumberFormatInfo info, int value, char expChar, int minDigits, bool positiveSign)
             {
                 sb.Append(expChar);
@@ -1049,7 +1037,6 @@ namespace System.Globalization
                     sb.Append(digits[index++]);
             }
 
-            [SecurityCritical]
             private static unsafe void FormatGeneral(StringBuilder sb, NumberBuffer number, int nMinDigits, int nMaxDigits, NumberFormatInfo info, char expChar, bool bSuppressScientific)
             {
                 int digPos = number.scale;
@@ -1097,7 +1084,6 @@ namespace System.Globalization
                     FormatExponent(sb, info, number.scale - 1, expChar, 2, true);
             }
 
-            [SecuritySafeCritical]
             private static void FormatPercent(StringBuilder sb, NumberBuffer number, int nMinDigits, int nMaxDigits, NumberFormatInfo info)
             {
                 string fmt = number.sign ?
@@ -1124,7 +1110,6 @@ namespace System.Globalization
                 }
             }
 
-            [SecurityCritical]
             private static unsafe void RoundNumber(ref NumberBuffer number, int pos)
             {
                 char* dig = number.digits;
@@ -1162,7 +1147,6 @@ namespace System.Globalization
                 dig[i] = '\0';
             }
 
-            [SecurityCritical]
             private static unsafe int FindSection(string format, int section)
             {
                 int src;
@@ -1174,7 +1158,7 @@ namespace System.Globalization
                 fixed (char* pFormat = format)
                 {
                     src = 0;
-                    for (; ;)
+                    for (;;)
                     {
                         switch (ch = pFormat[src++])
                         {
@@ -1200,7 +1184,6 @@ namespace System.Globalization
                 }
             }
 
-            [SecurityCritical]
             internal static unsafe string NumberToStringFormat(NumberBuffer number, string format, NumberFormatInfo info)
             {
                 int digitCount;
@@ -1220,7 +1203,7 @@ namespace System.Globalization
                 char* dig = number.digits;
                 char ch;
 
-                section = FindSection(format, number.digits[0] == 0 ? 2 : number.sign ? 1 : 0);
+                section = FindSection(format, dig[0] == 0 ? 2 : number.sign ? 1 : 0);
 
                 while (true)
                 {
@@ -1403,6 +1386,8 @@ namespace System.Globalization
 
                 fixed (char* pFormat = format)
                 {
+                    char * cur = dig;
+
                     while ((ch = pFormat[src++]) != 0 && ch != ';')
                     {
                         if (adjust > 0)
@@ -1416,7 +1401,7 @@ namespace System.Globalization
                                     {
                                         // digPos will be one greater than thousandsSepPos[thousandsSepCtr] since we are at
                                         // the character after which the groupSeparator needs to be appended.
-                                        sb.Append(*dig != 0 ? *dig++ : '0');
+                                        sb.Append(*cur != 0 ? *cur++ : '0');
                                         if (thousandSeps && digPos > 1 && thousandsSepCtr >= 0)
                                         {
                                             if (digPos == thousandsSepPos[thousandsSepCtr] + 1)
@@ -1444,7 +1429,7 @@ namespace System.Globalization
                                     }
                                     else
                                     {
-                                        ch = *dig != 0 ? *dig++ : digPos > lastDigit ? '0' : '\0';
+                                        ch = *cur != 0 ? *cur++ : digPos > lastDigit ? '0' : '\0';
                                     }
                                     if (ch != 0)
                                     {
@@ -1470,7 +1455,7 @@ namespace System.Globalization
                                         break;
                                     }
                                     // If the format has trailing zeros or the format has a decimal and digits remain
-                                    if (lastDigit < 0 || (decimalPos < digitCount && *dig != 0))
+                                    if (lastDigit < 0 || (decimalPos < digitCount && *cur != 0))
                                     {
                                         sb.Append(info.NumberDecimalSeparator);
                                         decimalWritten = true;

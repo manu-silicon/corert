@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Diagnostics;
@@ -12,27 +13,31 @@ using Internal.TypeSystem;
 
 namespace Internal.TypeSystem.Ecma
 {
-    public sealed class EcmaMethod : MethodDesc
+    public sealed class EcmaMethod : MethodDesc, EcmaModule.IEntityHandleObject
     {
-        static class MethodFlags
+        private static class MethodFlags
         {
             public const int BasicMetadataCache     = 0x0001;
             public const int Virtual                = 0x0002;
             public const int NewSlot                = 0x0004;
             public const int Abstract               = 0x0008;
+            public const int Final                  = 0x0010;
+            public const int NoInlining             = 0x0020;
+            public const int AggressiveInlining     = 0x0040;
+            public const int RuntimeImplemented     = 0x0080;
 
             public const int AttributeMetadataCache = 0x0100;
             public const int Intrinsic            = 0x0200;
         };
 
-        EcmaType _type;
-        MethodDefinitionHandle _handle;
+        private EcmaType _type;
+        private MethodDefinitionHandle _handle;
 
         // Cached values
-        ThreadSafeFlags _methodFlags;
-        MethodSignature _signature;
-        string _name;
-        TypeDesc[] _genericParameters; // TODO: Optional field?
+        private ThreadSafeFlags _methodFlags;
+        private MethodSignature _signature;
+        private string _name;
+        private TypeDesc[] _genericParameters; // TODO: Optional field?
 
         internal EcmaMethod(EcmaType type, MethodDefinitionHandle handle)
         {
@@ -43,6 +48,14 @@ namespace Internal.TypeSystem.Ecma
             // Initialize name eagerly in debug builds for convenience
             this.ToString();
 #endif
+        }
+
+        EntityHandle EcmaModule.IEntityHandleObject.Handle
+        {
+            get
+            {
+                return _handle;
+            }
         }
 
         public override TypeSystemContext Context
@@ -80,12 +93,12 @@ namespace Internal.TypeSystem.Ecma
                 return _signature;
             }
         }
- 
+
         public EcmaModule Module
         {
             get
             {
-                return _type.Module;
+                return _type.EcmaModule;
             }
         }
 
@@ -113,6 +126,7 @@ namespace Internal.TypeSystem.Ecma
             if ((mask & MethodFlags.BasicMetadataCache) != 0)
             {
                 var methodAttributes = Attributes;
+                var methodImplAttributes = ImplAttributes;
 
                 if ((methodAttributes & MethodAttributes.Virtual) != 0)
                     flags |= MethodFlags.Virtual;
@@ -122,6 +136,18 @@ namespace Internal.TypeSystem.Ecma
 
                 if ((methodAttributes & MethodAttributes.Abstract) != 0)
                     flags |= MethodFlags.Abstract;
+
+                if ((methodAttributes & MethodAttributes.Final) != 0)
+                    flags |= MethodFlags.Final;
+
+                if ((methodImplAttributes & MethodImplAttributes.NoInlining) != 0)
+                    flags |= MethodFlags.NoInlining;
+
+                if ((methodImplAttributes & MethodImplAttributes.AggressiveInlining) != 0)
+                    flags |= MethodFlags.AggressiveInlining;
+
+                if ((methodImplAttributes & MethodImplAttributes.Runtime) != 0)
+                    flags |= MethodFlags.RuntimeImplemented;
 
                 flags |= MethodFlags.BasicMetadataCache;
             }
@@ -190,6 +216,38 @@ namespace Internal.TypeSystem.Ecma
             }
         }
 
+        public override bool IsFinal
+        {
+            get
+            {
+                return (GetMethodFlags(MethodFlags.BasicMetadataCache | MethodFlags.Final) & MethodFlags.Final) != 0;
+            }
+        }
+
+        public override bool IsNoInlining
+        {
+            get
+            {
+                return (GetMethodFlags(MethodFlags.BasicMetadataCache | MethodFlags.NoInlining) & MethodFlags.NoInlining) != 0;
+            }
+        }
+
+        public override bool IsAggressiveInlining
+        {
+            get
+            {
+                return (GetMethodFlags(MethodFlags.BasicMetadataCache | MethodFlags.AggressiveInlining) & MethodFlags.AggressiveInlining) != 0;
+            }
+        }
+
+        public override bool IsRuntimeImplemented
+        {
+            get
+            {
+                return (GetMethodFlags(MethodFlags.BasicMetadataCache | MethodFlags.RuntimeImplemented) & MethodFlags.RuntimeImplemented) != 0;
+            }
+        }
+
         public override bool IsIntrinsic
         {
             get
@@ -231,7 +289,7 @@ namespace Internal.TypeSystem.Ecma
             }
         }
 
-        void ComputeGenericParameters()
+        private void ComputeGenericParameters()
         {
             var genericParameterHandles = MetadataReader.GetMethodDefinition(_handle).GetGenericParameters();
             int count = genericParameterHandles.Count;
@@ -272,29 +330,29 @@ namespace Internal.TypeSystem.Ecma
             return _type.ToString() + "." + Name;
         }
 
-        public bool IsPInvoke()
+        public override bool IsPInvoke
         {
-            return (((int)Attributes & (int)MethodAttributes.PinvokeImpl) != 0);
+            get
+            {
+                return (((int)Attributes & (int)MethodAttributes.PinvokeImpl) != 0);
+            }
         }
 
-        public string GetPInvokeImportName()
+        public override PInvokeMetadata GetPInvokeMethodMetadata()
         {
-            if (((int)Attributes & (int)MethodAttributes.PinvokeImpl) == 0)
-                return null;
+            if (!IsPInvoke)
+                return default(PInvokeMetadata);
 
-            var metadataReader = MetadataReader;
-            return metadataReader.GetString(metadataReader.GetMethodDefinition(_handle).GetImport().Name);
+            MetadataReader metadataReader = MetadataReader;
+            MethodImport import = metadataReader.GetMethodDefinition(_handle).GetImport();
+            string name = metadataReader.GetString(import.Name);
+
+            // Spot check the enums match
+            Debug.Assert((int)MethodImportAttributes.CallingConventionStdCall == (int)PInvokeAttributes.CallingConventionStdCall);
+            Debug.Assert((int)MethodImportAttributes.CharSetAuto == (int)PInvokeAttributes.CharSetAuto);
+            Debug.Assert((int)MethodImportAttributes.CharSetUnicode == (int)PInvokeAttributes.CharSetUnicode);
+
+            return new PInvokeMetadata(name, (PInvokeAttributes)import.Attributes);
         }
-    }
-
-    public static class EcmaMethodExtensions
-    {
-        public static bool IsPublic(this EcmaMethod method) { return (method.Attributes & MethodAttributes.MemberAccessMask) == MethodAttributes.Public; }
-        public static bool IsPrivate(this EcmaMethod method) { return (method.Attributes & MethodAttributes.MemberAccessMask) == MethodAttributes.Private; }
-        public static bool IsStatic(this EcmaMethod method) { return (method.Attributes & MethodAttributes.Static) != 0; }
-        public static bool IsFinal(this EcmaMethod method) { return (method.Attributes & MethodAttributes.Final) != 0; }
-        public static bool IsHideBySig(this EcmaMethod method) { return (method.Attributes & MethodAttributes.HideBySig) != 0; }
-        public static bool IsAbstract(this EcmaMethod method) { return (method.Attributes & MethodAttributes.Abstract) != 0; }
-        public static bool IsSpecialName(this EcmaMethod method) { return (method.Attributes & MethodAttributes.SpecialName) != 0; }
     }
 }

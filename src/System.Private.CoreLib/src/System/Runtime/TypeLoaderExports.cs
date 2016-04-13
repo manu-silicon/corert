@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using Internal.Runtime.Augments;
@@ -145,6 +146,16 @@ namespace System.Runtime
             return RawCalliHelper.Call<Object>(entry.Result, arg, entry.AuxResult);
         }
 
+        public unsafe static IntPtr GetDelegateThunk(object delegateObj, int whichThunk)
+        {
+            Entry entry = LookupInCache(s_cache, delegateObj.m_pEEType, new IntPtr(whichThunk));
+            if (entry == null)
+            {
+                entry = CacheMiss(delegateObj.m_pEEType, new IntPtr(whichThunk), SignatureKind.GenericDelegateThunk, delegateObj);
+            }
+            return entry.Result;
+        }
+
         public unsafe static IntPtr GVMLookupForSlot(object obj, RuntimeMethodHandle slot)
         {
             Entry entry = LookupInCache(s_cache, obj.m_pEEType, *(IntPtr*)&slot);
@@ -186,6 +197,7 @@ namespace System.Runtime
             GenericVirtualMethod,
             OpenInstanceResolver,
             DefaultConstructor,
+            GenericDelegateThunk,
             Count
         }
 
@@ -265,17 +277,20 @@ namespace System.Runtime
                         result = RuntimeAugments.TypeLoaderCallbacks.GenericLookupFromContextAndSignature(context, signature, out auxResult);
                         break;
                     case SignatureKind.GenericVirtualMethod:
-                        result = Internal.Runtime.CompilerServices.GenericVirtualMethodSupport.GVMLookupForSlot(*(RuntimeTypeHandle*)&context, *(RuntimeMethodHandle*)&signature);
+                        result = Internal.Runtime.CompilerServices.GenericVirtualMethodSupport.GVMLookupForSlot(new RuntimeTypeHandle(new EETypePtr(context)), *(RuntimeMethodHandle*)&signature);
                         break;
                     case SignatureKind.OpenInstanceResolver:
                         result = Internal.Runtime.CompilerServices.OpenMethodResolver.ResolveMethodWorker(signature, contextObject);
                         break;
                     case SignatureKind.DefaultConstructor:
                         {
-                            result = RuntimeAugments.Callbacks.TryGetDefaultConstructorForType(*(RuntimeTypeHandle*)&context);
+                            result = RuntimeAugments.Callbacks.TryGetDefaultConstructorForType(new RuntimeTypeHandle(new EETypePtr(context)));
                             if (result == IntPtr.Zero)
                                 result = RuntimeAugments.GetFallbackDefaultConstructor();
                         }
+                        break;
+                    case SignatureKind.GenericDelegateThunk:
+                        result = RuntimeAugments.TypeLoaderCallbacks.GetDelegateThunk((Delegate)contextObject, (int)signature);
                         break;
                     default:
                         result = RawCalliHelper.Call<IntPtr>(s_resolutionFunctionPointers[(int)signatureKind], context, signature, contextObject, out auxResult);

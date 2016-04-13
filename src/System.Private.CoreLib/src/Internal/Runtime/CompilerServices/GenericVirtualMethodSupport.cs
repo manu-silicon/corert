@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -18,7 +19,7 @@ namespace Internal.Runtime.CompilerServices
             IntPtr resolution = IntPtr.Zero;
 
             // Otherwise, walk parent hierarchy attempting to resolve
-            EETypePtr eetype = type.EEType;
+            EETypePtr eetype = type.ToEETypePtr();
 
             IntPtr functionPointer = IntPtr.Zero;
             IntPtr genericDictionary = IntPtr.Zero;
@@ -28,7 +29,7 @@ namespace Internal.Runtime.CompilerServices
                 RuntimeTypeHandle handle = new RuntimeTypeHandle(eetype);
                 string methodName = methodNameAndSignature.Name;
                 IntPtr methodSignature = methodNameAndSignature.Signature;
-                if (RuntimeAugments.Callbacks.TryGetGenericVirtualTargetForTypeAndSlot(handle, ref declaringType, ref genericArguments, ref methodName, ref methodSignature, out functionPointer, out genericDictionary, out slotChanged))
+                if (RuntimeAugments.Callbacks.TryGetGenericVirtualTargetForTypeAndSlot(handle, ref declaringType, genericArguments, ref methodName, ref methodSignature, out functionPointer, out genericDictionary, out slotChanged))
                 {
                     methodNameAndSignature = new MethodNameAndSignature(methodName, methodSignature);
 

@@ -1,18 +1,20 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Diagnostics;
 using System.Text;
+using Internal.NativeFormat;
 
 namespace Internal.TypeSystem
 {
-    public sealed class InstantiatedMethod : MethodDesc
+    public sealed partial class InstantiatedMethod : MethodDesc
     {
-        MethodDesc _methodDef;
-        Instantiation _instantiation;
+        private MethodDesc _methodDef;
+        private Instantiation _instantiation;
 
-        MethodSignature _signature;
+        private MethodSignature _signature;
 
         internal InstantiatedMethod(MethodDesc methodDef, Instantiation instantiation)
         {
@@ -21,6 +23,11 @@ namespace Internal.TypeSystem
 
             Debug.Assert(instantiation.Length > 0);
             _instantiation = instantiation;
+        }
+
+        protected override int ComputeHashCode()
+        {
+            return TypeHashingAlgorithms.ComputeMethodHashCode(OwningType.GetHashCode(), Instantiation.ComputeGenericInstanceHashCode(TypeHashingAlgorithms.ComputeNameHashCode(Name)));
         }
 
         public override TypeSystemContext Context
@@ -39,7 +46,7 @@ namespace Internal.TypeSystem
             }
         }
 
-        TypeDesc Instantiate(TypeDesc type)
+        private TypeDesc Instantiate(TypeDesc type)
         {
             return type.InstantiateSignature(new Instantiation(), _instantiation);
         }
@@ -93,6 +100,14 @@ namespace Internal.TypeSystem
             get
             {
                 return _methodDef.IsAbstract;
+            }
+        }
+
+        public override bool IsFinal
+        {
+            get
+            {
+                return _methodDef.IsFinal;
             }
         }
 

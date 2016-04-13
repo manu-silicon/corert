@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //
 // This is used internally to create best fit behavior as per the original windows best fit behavior.
@@ -154,7 +155,6 @@ namespace System.Text
         }
 
         // Clear the buffer
-        [System.Security.SecuritySafeCritical] // overrides public transparent member
         public override unsafe void Reset()
         {
             iCount = -1;
@@ -162,7 +162,6 @@ namespace System.Text
         }
 
         // This version just counts the fallback and doesn't actually copy anything.
-        [System.Security.SecurityCritical]  // auto-generated
         internal unsafe override int InternalFallback(byte[] bytes, byte* pBytes)
         // Right now this has both bytes and bytes[], since we might have extra bytes, hence the
         // array, and we might need the index, hence the byte*

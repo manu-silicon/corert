@@ -1,15 +1,14 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
-#include "rhcommon.h"
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+#include "common.h"
 #include "CommonTypes.h"
-#include "daccess.h"
 #include "CommonMacros.h"
+#include "daccess.h"
 #include "event.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "gcrhinterface.h"
 #include "varint.h"

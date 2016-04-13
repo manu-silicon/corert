@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*============================================================
 **
@@ -29,6 +30,13 @@ namespace System
         {
             _value = value;
         }
+
+#if INPLACE_RUNTIME
+        internal unsafe System.Runtime.EEType* ToPointer()
+        {
+            return (System.Runtime.EEType*)(void*)_value;
+        }
+#endif
 
         public override bool Equals(Object obj)
         {
@@ -151,7 +159,7 @@ namespace System
                 if (!(classification == RuntimeImports.RhEETypeClassification.Regular || classification == RuntimeImports.RhEETypeClassification.Generic))
                     return false;
                 EETypePtr baseType = this.BaseType;
-                return baseType == typeof(Enum).TypeHandle.EEType;
+                return baseType == typeof(Enum).TypeHandle.ToEETypePtr();
             }
         }
 
@@ -168,17 +176,17 @@ namespace System
             get
             {
                 if (IsArray)
-                    return typeof(Array).TypeHandle.EEType;
+                    return typeof(Array).TypeHandle.ToEETypePtr();
 
                 if (IsPointer)
                     return new EETypePtr(default(IntPtr));
 
                 EETypePtr baseEEType = RuntimeImports.RhGetNonArrayBaseType(this);
-                if (baseEEType == typeof(MDArrayRank2).TypeHandle.EEType ||
-                    baseEEType == typeof(MDArrayRank3).TypeHandle.EEType ||
-                    baseEEType == typeof(MDArrayRank4).TypeHandle.EEType)
+                if (baseEEType == typeof(MDArrayRank2).TypeHandle.ToEETypePtr() ||
+                    baseEEType == typeof(MDArrayRank3).TypeHandle.ToEETypePtr() ||
+                    baseEEType == typeof(MDArrayRank4).TypeHandle.ToEETypePtr())
                 {
-                    return typeof(Array).TypeHandle.EEType;
+                    return typeof(Array).TypeHandle.ToEETypePtr();
                 }
 
                 return baseEEType;
@@ -226,6 +234,18 @@ namespace System
                 RuntimeImports.RhCorElementType corElementType = this.CorElementType;
                 return RuntimeImports.GetRhCorElementTypeInfo(corElementType);
             }
+        }
+
+#if CORERT
+        [Intrinsic]
+#endif
+        internal static EETypePtr EETypePtrOf<T>()
+        {
+            // Compilers are required to provide a low level implementation of this method.
+            // This can be achieved by optimizing away the reflection part of this implementation
+            // by optimizing typeof(!!0).TypeHandle into "ldtoken !!0", or by
+            // completely replacing the body of this method.
+            return typeof(T).TypeHandle.ToEETypePtr();
         }
     }
 }

@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -25,12 +26,12 @@ namespace Internal.Runtime.CompilerServices
         private readonly short _resolveType;
         private readonly int _handle;
         private readonly IntPtr _methodHandleOrSlotOrCodePointer;
-        private readonly RuntimeTypeHandle _declaringType;
+        private readonly EETypePtr _declaringType;
 
         public OpenMethodResolver(RuntimeTypeHandle declaringTypeOfSlot, int slot, int handle)
         {
             _resolveType = DispatchResolve;
-            _declaringType = declaringTypeOfSlot;
+            _declaringType = declaringTypeOfSlot.ToEETypePtr();
             _methodHandleOrSlotOrCodePointer = new IntPtr(slot);
             _handle = handle;
         }
@@ -39,7 +40,7 @@ namespace Internal.Runtime.CompilerServices
         {
             _resolveType = GVMResolve;
             _methodHandleOrSlotOrCodePointer = *(IntPtr*)&gvmSlot;
-            _declaringType = declaringTypeOfSlot;
+            _declaringType = declaringTypeOfSlot.ToEETypePtr();
             _handle = handle;
         }
 
@@ -47,7 +48,7 @@ namespace Internal.Runtime.CompilerServices
         {
             _resolveType = OpenNonVirtualResolve;
             _methodHandleOrSlotOrCodePointer = codePointer;
-            _declaringType = declaringType;
+            _declaringType = declaringType.ToEETypePtr();
             _handle = handle;
         }
 
@@ -63,7 +64,7 @@ namespace Internal.Runtime.CompilerServices
         {
             get
             {
-                return _declaringType;
+                return new RuntimeTypeHandle(_declaringType);
             }
         }
 
@@ -97,7 +98,7 @@ namespace Internal.Runtime.CompilerServices
         {
             if (_resolveType == DispatchResolve)
             {
-                return RuntimeImports.RhResolveDispatch(thisObject, _declaringType.EEType, (ushort)_methodHandleOrSlotOrCodePointer.ToInt32());
+                return RuntimeImports.RhResolveDispatch(thisObject, _declaringType, (ushort)_methodHandleOrSlotOrCodePointer.ToInt32());
             }
             else if (_resolveType == GVMResolve)
             {
@@ -181,8 +182,7 @@ namespace Internal.Runtime.CompilerServices
                 IntPtr returnValue;
                 if (s_internedResolverHash.TryGetValue(this, out returnValue))
                     return returnValue;
-
-                returnValue = Interop.mincore.HeapAlloc(Interop.mincore.GetProcessHeap(), 0, new UIntPtr((uint)sizeof(OpenMethodResolver)));
+                returnValue = Interop.MemAlloc(new UIntPtr((uint)sizeof(OpenMethodResolver)));
                 *((OpenMethodResolver*)returnValue) = this;
                 s_internedResolverHash.Add(this, returnValue);
                 return returnValue;

@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*============================================================
 **
@@ -105,10 +106,10 @@ namespace System
 
 #pragma warning restore
 
-// String constructors
-// These are special. the implementation methods for these have a different signature from the
-// declared constructors. We use a RuntimeImport/RuntimeExport combination to workaround this difference.
-// TODO: Determine a more reasonable solution for this.
+        // String constructors
+        // These are special. the implementation methods for these have a different signature from the
+        // declared constructors. We use a RuntimeImport/RuntimeExport combination to workaround this difference.
+        // TODO: Determine a more reasonable solution for this.
 
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
 #if CORERT
@@ -129,7 +130,7 @@ namespace System
 
                 unsafe
                 {
-                    fixed (char* dest = result, source = value)
+                    fixed (char* dest = &result._firstChar, source = value)
                     {
                         wstrcpy(dest, source, value.Length);
                     }
@@ -172,7 +173,7 @@ namespace System
 
                 unsafe
                 {
-                    fixed (char* dest = result, source = value)
+                    fixed (char* dest = &result._firstChar, source = value)
                     {
                         wstrcpy(dest, source + startIndex, length);
                     }
@@ -185,7 +186,6 @@ namespace System
 
         [CLSCompliant(false)]
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        [SecurityCritical] // required to match contract
 #if CORERT
         unsafe public extern String(char* value);   // CtorCharPtr
 
@@ -213,7 +213,7 @@ namespace System
                     return String.Empty;
 
                 String result = FastAllocateString(count);
-                fixed (char* dest = result)
+                fixed (char* dest = &result._firstChar)
                     wstrcpy(dest, ptr, count);
                 return result;
             }
@@ -225,7 +225,6 @@ namespace System
 
         [CLSCompliant(false)]
         [MethodImplAttribute(MethodImplOptions.InternalCall)]
-        [SecurityCritical] // required to match contract
 #if CORERT
         unsafe public extern String(char* value, int startIndex, int length);   // CtorCharPtrStartLength
 
@@ -263,7 +262,7 @@ namespace System
 
             try
             {
-                fixed (char* dest = result)
+                fixed (char* dest = &result._firstChar)
                     wstrcpy(dest, pFrom, length);
                 return result;
             }
@@ -295,7 +294,7 @@ namespace System
 
                 unsafe
                 {
-                    fixed (char* dest = result)
+                    fixed (char* dest = &result._firstChar)
                     {
                         uint cc = (uint)((c << 16) | c);
                         uint* dmem = (uint*)dest;
@@ -324,7 +323,7 @@ namespace System
             else if (count == 0)
                 return String.Empty;
             else
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException("count", SR.ArgumentOutOfRange_NegativeCount);
         }
 
         private const int TrimHead = 0;
@@ -421,29 +420,28 @@ namespace System
             if (values == null)
                 throw new ArgumentNullException("values");
 
-            if (separator == null)
-                separator = String.Empty;
-
-
             using (IEnumerator<String> en = values.GetEnumerator())
             {
                 if (!en.MoveNext())
                     return String.Empty;
 
-                StringBuilder result = StringBuilderCache.Acquire();
-                if (en.Current != null)
+                String firstValue = en.Current;
+
+                if (!en.MoveNext())
                 {
-                    result.Append(en.Current);
+                    // Only one value available
+                    return firstValue ?? String.Empty;
                 }
 
-                while (en.MoveNext())
+                // Null separator and values are handled by the StringBuilder
+                StringBuilder result = StringBuilderCache.Acquire();
+                result.Append(firstValue);
+
+                do
                 {
                     result.Append(separator);
-                    if (en.Current != null)
-                    {
-                        result.Append(en.Current);
-                    }
-                }
+                    result.Append(en.Current);
+                } while (en.MoveNext());
                 return StringBuilderCache.GetStringAndRelease(result);
             }
         }
@@ -476,6 +474,11 @@ namespace System
                 return String.Empty;
             }
 
+            if (count == 1)
+            {
+                return value[startIndex] ?? String.Empty;
+            }
+
             int endIndex = startIndex + count - 1;
             StringBuilder result = StringBuilderCache.Acquire();
             // Append the first string first and then append each following string prefixed by the separator.
@@ -493,11 +496,11 @@ namespace System
         {
             // If any of our indices are negative throw an exception.
             if (count < 0)
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException("count", SR.ArgumentOutOfRange_NegativeCount);
             if (indexA < 0)
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException("indexA", SR.ArgumentOutOfRange_Index);
             if (indexB < 0)
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException("indexB", SR.ArgumentOutOfRange_Index);
 
             int countA = count;
             int countB = count;
@@ -507,18 +510,18 @@ namespace System
             {
                 countA = strA.Length - indexA;
                 if (countA < 0)
-                    throw new ArgumentOutOfRangeException();
+                    throw new ArgumentOutOfRangeException("indexA", SR.ArgumentOutOfRange_Index);
             }
 
             if (count > (strB.Length - indexB))
             {
                 countB = strB.Length - indexB;
                 if (countB < 0)
-                    throw new ArgumentOutOfRangeException();
+                    throw new ArgumentOutOfRangeException("indexB", SR.ArgumentOutOfRange_Index);
             }
 
             // Set up the loop variables.
-            fixed (char* pStrA = strA, pStrB = strB)
+            fixed (char* pStrA = &strA._firstChar, pStrB = &strB._firstChar)
             {
                 char* strAChars = pStrA + indexA;
                 char* strBChars = pStrB + indexB;
@@ -633,6 +636,7 @@ namespace System
 #endif // BIT64
 
                 // Loop comparing a DWORD at a time.
+                // Reads are potentially unaligned
                 while ((count -= 2) >= 0)
                 {
                     if ((*((uint*)((byte*)strBChars + diff)) - *strBChars) != 0)
@@ -682,29 +686,33 @@ namespace System
                 char* a = ap;
                 char* b = bp;
 
-                // unroll the loop
 #if BIT64
+                // Single int read aligns pointers for the following long reads
+                // PERF: No length check needed as there is always an int32 worth of string allocated
+                //       This read can also include the null terminator which both strings will have
+                if (*(int*)a != *(int*)b) return false;
+                length -= 2; a += 2; b += 2;
+
                 // for 64-bit platforms we unroll by 12 and
                 // check 3 qword at a time. This is less code
-                // than the 32 bit case and is shorter
-                // pathlength
+                // than the 32 bit case and is a shorter path length
 
                 while (length >= 12)
                 {
-                    if (*(long*)a != *(long*)b) return false;
-                    if (*(long*)(a + 4) != *(long*)(b + 4)) return false;
-                    if (*(long*)(a + 8) != *(long*)(b + 8)) return false;
-                    a += 12; b += 12; length -= 12;
+                    if (*(long*)a != *(long*)b) goto ReturnFalse;
+                    if (*(long*)(a + 4) != *(long*)(b + 4)) goto ReturnFalse;
+                    if (*(long*)(a + 8) != *(long*)(b + 8)) goto ReturnFalse;
+                    length -= 12; a += 12; b += 12;
                 }
 #else
                 while (length >= 10)
                 {
-                    if (*(int*)a != *(int*)b) return false;
-                    if (*(int*)(a + 2) != *(int*)(b + 2)) return false;
-                    if (*(int*)(a + 4) != *(int*)(b + 4)) return false;
-                    if (*(int*)(a + 6) != *(int*)(b + 6)) return false;
-                    if (*(int*)(a + 8) != *(int*)(b + 8)) return false;
-                    a += 10; b += 10; length -= 10;
+                    if (*(int*)a != *(int*)b) goto ReturnFalse;
+                    if (*(int*)(a + 2) != *(int*)(b + 2)) goto ReturnFalse;
+                    if (*(int*)(a + 4) != *(int*)(b + 4)) goto ReturnFalse;
+                    if (*(int*)(a + 6) != *(int*)(b + 6)) goto ReturnFalse;
+                    if (*(int*)(a + 8) != *(int*)(b + 8)) goto ReturnFalse;
+                    length -= 10; a += 10; b += 10;
                 }
 #endif
 
@@ -714,11 +722,69 @@ namespace System
                 // the zero terminator.
                 while (length > 0)
                 {
-                    if (*(int*)a != *(int*)b) break;
-                    a += 2; b += 2; length -= 2;
+                    if (*(int*)a != *(int*)b) goto ReturnFalse;
+                    length -= 2; a += 2; b += 2;
                 }
 
-                return (length <= 0);
+                return true;
+
+                ReturnFalse:
+                return false;
+            }
+        }
+
+        private unsafe static bool StartsWithOrdinalHelper(String str, String startsWith)
+        {
+            Debug.Assert(str != null);
+            Debug.Assert(startsWith != null);
+            Debug.Assert(str.Length >= startsWith.Length);
+
+            int length = startsWith.Length;
+
+            fixed (char* ap = &str._firstChar) fixed (char* bp = &startsWith._firstChar)
+            {
+                char* a = ap;
+                char* b = bp;
+
+#if BIT64
+                // Single int read aligns pointers for the following long reads
+                // No length check needed as this method is called when length >= 2
+                Debug.Assert(length >= 2);
+                if (*(int*)a != *(int*)b) goto ReturnFalse;
+                length -= 2; a += 2; b += 2;
+
+                while (length >= 12)
+                {
+                    if (*(long*)a != *(long*)b) goto ReturnFalse;
+                    if (*(long*)(a + 4) != *(long*)(b + 4)) goto ReturnFalse;
+                    if (*(long*)(a + 8) != *(long*)(b + 8)) goto ReturnFalse;
+                    length -= 12; a += 12; b += 12;
+                }
+#else
+                while (length >= 10)
+                {
+                    if (*(int*)a != *(int*)b) goto ReturnFalse;
+                    if (*(int*)(a + 2) != *(int*)(b + 2)) goto ReturnFalse;
+                    if (*(int*)(a + 4) != *(int*)(b + 4)) goto ReturnFalse;
+                    if (*(int*)(a + 6) != *(int*)(b + 6)) goto ReturnFalse;
+                    if (*(int*)(a + 8) != *(int*)(b + 8)) goto ReturnFalse;
+                    length -= 10; a += 10; b += 10;
+                }
+#endif
+
+                while (length >= 2)
+                {
+                    if (*(int*)a != *(int*)b) goto ReturnFalse;
+                    length -= 2; a += 2; b += 2;
+                }
+
+                // PERF: This depends on the fact that the String objects are always zero terminated 
+                // and that the terminating zero is not included in the length. For even string sizes
+                // this compare can include the zero terminator. Bitwise OR avoids a branch.
+                return length == 0 | *a == *b;
+
+                ReturnFalse:
+                return false;
             }
         }
 
@@ -764,9 +830,9 @@ namespace System
                         diffOffset = 8;
                         break;
                     }
+                    length -= 10;
                     a += 10;
                     b += 10;
-                    length -= 10;
                 }
 
                 if (diffOffset != -1)
@@ -782,19 +848,21 @@ namespace System
                     return ((int)*(a + 1) - (int)*(b + 1));
                 }
 
-                // now go back to slower code path and do comparison on 4 bytes one time.
-                // Following code also take advantage of the fact strings will 
-                // use even numbers of characters (runtime will have a extra zero at the end.)
-                // so even if length is 1 here, we can still do the comparsion.  
+                // now go back to slower code path and do comparison on 4 bytes at a time.  
+                // This depends on the fact that the String objects are  
+                // always zero terminated and that the terminating zero is not included  
+                // in the length. For odd string sizes, the last compare will include  
+                // the zero terminator.  
+
                 while (length > 0)
                 {
                     if (*(int*)a != *(int*)b)
                     {
                         break;
                     }
+                    length -= 2;
                     a += 2;
                     b += 2;
-                    length -= 2;
                 }
 
                 if (length > 0)
@@ -900,13 +968,10 @@ namespace System
                 return true;
             }
 
-            if ((Object)a == null || (Object)b == null)
+            if ((Object)a == null || (Object)b == null || a.Length != b.Length)
             {
                 return false;
             }
-
-            if (a.Length != b.Length)
-                return false;
 
             return OrdinalCompareEqualLengthStrings(a, b);
         }
@@ -955,9 +1020,7 @@ namespace System
         {
             if (Object.ReferenceEquals(a, b))
                 return true;
-            if (a == null || b == null)
-                return false;
-            if (a.Length != b.Length)
+            if (a == null || b == null || a.Length != b.Length)
                 return false;
             return OrdinalCompareEqualLengthStrings(a, b);
         }
@@ -966,9 +1029,7 @@ namespace System
         {
             if (Object.ReferenceEquals(a, b))
                 return false;
-            if (a == null || b == null)
-                return true;
-            if (a.Length != b.Length)
+            if (a == null || b == null || a.Length != b.Length)
                 return true;
             return !OrdinalCompareEqualLengthStrings(a, b);
         }
@@ -999,9 +1060,9 @@ namespace System
         }
 
         // Converts a substring of this string to an array of characters.  Copies the
-        // characters of this string beginning at position startIndex and ending at
-        // startIndex + length - 1 to the character array buffer, beginning
-        // at bufferStartIndex.
+        // characters of this string beginning at position sourceIndex and ending at
+        // sourceIndex + count - 1 to the character array buffer, beginning
+        // at destinationIndex.
         //
         unsafe public void CopyTo(int sourceIndex, char[] destination, int destinationIndex, int count)
         {
@@ -1087,7 +1148,7 @@ namespace System
         {
             unsafe
             {
-                fixed (char* src = this)
+                fixed (char* src = &_firstChar)
                 {
 #if BIT64
                     int hash1 = 5381;
@@ -1133,8 +1194,8 @@ namespace System
         //
         /// This is a EE implemented function so that the JIT can recognise is specially
         /// and eliminate checks on character fetchs in a loop like:
-        ///        for(int I = 0; I < str.Length  
-        ///              
+        ///        for(int i = 0; i < str.Length; i++) str[i]  
+        /// The actually code generated for this will be one instruction and will be inlined.
         //
         // Spec#: Add postcondition in a contract assembly.  Potential perf problem.
         public int Length
@@ -1143,10 +1204,10 @@ namespace System
         }
 
         // Creates an array of strings by splitting this string at each
-        // occurence of a separator.  The separator is searched for, and if found,
-        // the substring preceding the occurence is stored as the first element in
+        // occurrence of a separator.  The separator is searched for, and if found,
+        // the substring preceding the occurrence is stored as the first element in
         // the array of strings.  We then continue in this manner by searching
-        // the substring that follows the occurence.  On the other hand, if the separator
+        // the substring that follows the occurrence.  On the other hand, if the separator
         // is not found, the array of strings will contain this instance as its only element.
         // If the separator is null
         // whitespace (i.e., Character.IsWhitespace) is used as the separator.
@@ -1157,12 +1218,12 @@ namespace System
         }
 
         // Creates an array of strings by splitting this string at each
-        // occurence of a separator.  The separator is searched for, and if found,
-        // the substring preceding the occurence is stored as the first element in
+        // occurrence of a separator.  The separator is searched for, and if found,
+        // the substring preceding the occurrence is stored as the first element in
         // the array of strings.  We then continue in this manner by searching
-        // the substring that follows the occurence.  On the other hand, if the separator
+        // the substring that follows the occurrence.  On the other hand, if the separator
         // is not found, the array of strings will contain this instance as its only element.
-        // If the spearator is the empty string (i.e., String.Empty), then
+        // If the separator is the empty string (i.e., String.Empty), then
         // whitespace (i.e., Character.IsWhitespace) is used as the separator.
         // If there are more than count different strings, the last n-(count-1)
         // elements are concatenated and added as the last String.
@@ -1198,15 +1259,18 @@ namespace System
                 return Array.Empty<String>();
             }
 
-            int[] sepList = new int[Length];
-            int numReplaces = MakeSeparatorList(separator, ref sepList);
-
-            //Handle the special case of no replaces and special count.
-            if (0 == numReplaces || count == 1)
+            if (count == 1)
             {
-                String[] stringArray = new String[1];
-                stringArray[0] = this;
-                return stringArray;
+                return new String[] { this };
+            }
+
+            int[] sepList = new int[Length];
+            int numReplaces = MakeSeparatorList(separator, sepList);
+
+            // Handle the special case of no replaces.
+            if (0 == numReplaces)
+            {
+                return new String[] { this };
             }
 
             if (omitEmptyEntries)
@@ -1249,16 +1313,19 @@ namespace System
                 return Array.Empty<String>();
             }
 
+            if (count == 1)
+            {
+                return new String[] { this };
+            }
+
             int[] sepList = new int[Length];
             int[] lengthList = new int[Length];
-            int numReplaces = MakeSeparatorList(separator, ref sepList, ref lengthList);
+            int numReplaces = MakeSeparatorList(separator, sepList, lengthList);
 
-            //Handle the special case of no replaces and special count.
-            if (0 == numReplaces || count == 1)
+            //Handle the special case of no replaces.
+            if (0 == numReplaces)
             {
-                String[] stringArray = new String[1];
-                stringArray[0] = this;
-                return stringArray;
+                return new String[] { this };
             }
 
             if (omitEmptyEntries)
@@ -1271,7 +1338,7 @@ namespace System
             }
         }
 
-        // Note a few special case in this function:
+        // Note a special case in this function:
         //     If there is no separator in the string, a string array which only contains 
         //     the original string will be returned regardless of the count. 
         //
@@ -1360,12 +1427,12 @@ namespace System
         }
 
         //--------------------------------------------------------------------    
-        // This function returns number of the places within baseString where 
-        // instances of characters in Separator occur.         
+        // This function returns the number of the places within this instance where 
+        // characters in Separator occur.
         // Args: separator  -- A string containing all of the split characters.
         //       sepList    -- an array of ints for split char indicies.
         //--------------------------------------------------------------------    
-        private unsafe int MakeSeparatorList(char[] separator, ref int[] sepList)
+        private unsafe int MakeSeparatorList(char[] separator, int[] sepList)
         {
             int foundCount = 0;
 
@@ -1408,13 +1475,13 @@ namespace System
         }
 
         //--------------------------------------------------------------------    
-        // This function returns number of the places within baseString where 
-        // instances of separator strings occur.         
+        // This function returns the number of the places within this instance where 
+        // instances of separator strings occur.
         // Args: separators -- An array containing all of the split strings.
         //       sepList    -- an array of ints for split string indicies.
         //       lengthList -- an array of ints for split string lengths.
         //--------------------------------------------------------------------    
-        private unsafe int MakeSeparatorList(String[] separators, ref int[] sepList, ref int[] lengthList)
+        private unsafe int MakeSeparatorList(String[] separators, int[] sepList, int[] lengthList)
         {
             int foundCount = 0;
             int sepListCount = sepList.Length;
@@ -1509,7 +1576,7 @@ namespace System
         }
 
 
-        // Removes a string of characters from the ends of this string.
+        // Removes a set of characters from the end of this string.
 
         public String Trim(params char[] trimChars)
         {
@@ -1520,7 +1587,7 @@ namespace System
             return TrimHelper(trimChars, TrimBoth);
         }
 
-        // Removes a string of characters from the beginning of this string.
+        // Removes a set of characters from the beginning of this string.
         public String TrimStart(params char[] trimChars)
         {
             if (null == trimChars || trimChars.Length == 0)
@@ -1531,7 +1598,7 @@ namespace System
         }
 
 
-        // Removes a string of characters from the end of this string.
+        // Removes a set of characters from the end of this string.
         public String TrimEnd(params char[] trimChars)
         {
             if (null == trimChars || trimChars.Length == 0)
@@ -1575,9 +1642,9 @@ namespace System
             {
                 // We allocate one extra char as an interop convenience so that our strings are null-
                 // terminated, however, we don't pass the extra +1 to the array allocation because the base
-                // size of this object includes the m_firstChar field.
-                string newStr = RuntimeImports.RhNewArrayAsString(String.Empty.EETypePtr, length);
-                newStr._stringLength = length;
+                // size of this object includes the _firstChar field.
+                string newStr = RuntimeImports.RhNewArrayAsString(EETypePtr.EETypePtrOf<string>(), length);
+                Debug.Assert(newStr._stringLength == length);
                 return newStr;
             }
             catch (OverflowException)
@@ -1810,7 +1877,6 @@ namespace System
                     return FormatProvider.CompareIgnoreCase(strA, indexA, lengthA, strB, indexB, lengthB);
 
                 case StringComparison.Ordinal:
-                    // TODO: How come this doesn't just call CompareOrdinal below?
                     return nativeCompareOrdinalEx(strA, indexA, strB, indexB, length);
 
                 case StringComparison.OrdinalIgnoreCase:
@@ -1821,15 +1887,12 @@ namespace System
             }
         }
 
-        // Compares this object to another object, returning an integer that
+        // Compares this String to another String (cast as object), returning an integer that
         // indicates the relationship. This method returns a value less than 0 if this is less than value, 0
-        // if this is equal to value, or a value greater than 0
-        // if this is greater than value.  Strings are considered to be
-        // greater than all non-String objects.  Note that this means sorted 
-        // arrays would contain nulls, other objects, then Strings in that order.
+        // if this is equal to value, or a value greater than 0 if this is greater than value.
         //
 
-        private int CompareTo(Object value)
+        int IComparable.CompareTo(Object value)
         {
             if (value == null)
             {
@@ -1842,11 +1905,6 @@ namespace System
             }
 
             return String.Compare(this, (String)value, StringComparison.CurrentCulture);
-        }
-
-        int IComparable.CompareTo(Object value)
-        {
-            return this.CompareTo(value);
         }
 
         // Determines the sorting relation of StrB to the current instance.
@@ -1883,7 +1941,6 @@ namespace System
                 return 1;
             }
 
-            // TODO:   How come this doesn't use the nativeCompareOrdinalEx that String.Compare(...StringComparison.Ordinal) uses above and below?
             return CompareOrdinalHelper(strA, strB);
         }
 
@@ -1970,7 +2027,7 @@ namespace System
             return false;
         }
 
-        // Returns the index of the first occurance of value in the current instance.
+        // Returns the index of the first occurrence of value in the current instance.
         // The search starts at startIndex and runs thorough the next count characters.
         //
 
@@ -1987,12 +2044,12 @@ namespace System
         public unsafe int IndexOf(char value, int startIndex, int count)
         {
             if (startIndex < 0 || startIndex > Length)
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException("startIndex", SR.ArgumentOutOfRange_Index);
 
             if (count < 0 || count > Length - startIndex)
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException("count", SR.ArgumentOutOfRange_Count);
 
-            fixed (char* pChars = this)
+            fixed (char* pChars = &_firstChar)
             {
                 char* pCh = pChars + startIndex;
                 for (int i = 0; i < count; i++)
@@ -2006,8 +2063,8 @@ namespace System
             return -1;
         }
 
-        // Returns the index of the first occurance of any character in value in the current instance.
-        // The search starts at startIndex and runs to endIndex-1. [startIndex,endIndex).
+        // Returns the index of the first occurrence of any specified character in the current instance.
+        // The search starts at startIndex and runs to startIndex + count - 1.
         //
 
         public int IndexOfAny(char[] anyOf)
@@ -2026,16 +2083,16 @@ namespace System
                 throw new ArgumentNullException("anyOf");
 
             if (startIndex < 0 || startIndex > Length)
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException("startIndex", SR.ArgumentOutOfRange_Index);
 
             if (count < 0 || count > Length - startIndex)
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException("count", SR.ArgumentOutOfRange_Count);
 
             // use probabilistic map, see InitializeProbabilisticMap
             uint* charMap = stackalloc uint[PROBABILISTICMAP_SIZE];
             InitializeProbabilisticMap(charMap, anyOf);
 
-            fixed (char* pChars = this)
+            fixed (char* pChars = &_firstChar)
             {
                 char* pCh = pChars + startIndex;
                 for (int i = 0; i < count; i++)
@@ -2178,8 +2235,8 @@ namespace System
             }
         }
 
-        // Returns the index of the last occurance of value in the current instance.
-        // The search starts at startIndex and runs to endIndex. [startIndex,endIndex].
+        // Returns the index of the last occurrence of a specified character in the current instance.
+        // The search starts at startIndex and runs backwards to startIndex - count + 1.
         // The character at position startIndex is included in the search.  startIndex is the larger
         // index within the string.
         //
@@ -2200,12 +2257,12 @@ namespace System
                 return -1;
 
             if (startIndex < 0 || startIndex >= Length)
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException("startIndex", SR.ArgumentOutOfRange_Index);
 
             if (count < 0 || count - 1 > startIndex)
-                throw new ArgumentOutOfRangeException();
+                throw new ArgumentOutOfRangeException("count", SR.ArgumentOutOfRange_Count);
 
-            fixed (char* pChars = this)
+            fixed (char* pChars = &_firstChar)
             {
                 char* pCh = pChars + startIndex;
                 //We search [startIndex..EndIndex]
@@ -2220,8 +2277,8 @@ namespace System
             return -1;
         }
 
-        // Returns the index of the last occurance of any character in value in the current instance.
-        // The search starts at startIndex and runs to endIndex. [startIndex,endIndex].
+        // Returns the index of the last occurrence of any specified character in the current instance.
+        // The search starts at startIndex and runs backwards to startIndex - count + 1.
         // The character at position startIndex is included in the search.  startIndex is the larger
         // index within the string.
         //
@@ -2247,18 +2304,18 @@ namespace System
                 return -1;
 
             if ((startIndex < 0) || (startIndex >= Length))
-                throw new ArgumentOutOfRangeException("startIndex", "ArgumentOutOfRange_Index");
+                throw new ArgumentOutOfRangeException("startIndex", SR.ArgumentOutOfRange_Index);
 
             if ((count < 0) || ((count - 1) > startIndex))
             {
-                throw new ArgumentOutOfRangeException("count", "ArgumentOutOfRange_Count");
+                throw new ArgumentOutOfRangeException("count", SR.ArgumentOutOfRange_Count);
             }
 
             // use probabilistic map, see InitializeProbabilisticMap
             uint* charMap = stackalloc uint[PROBABILISTICMAP_SIZE];
             InitializeProbabilisticMap(charMap, anyOf);
 
-            fixed (char* pChars = this)
+            fixed (char* pChars = &_firstChar)
             {
                 char* pCh = pChars + startIndex;
 
@@ -2274,8 +2331,8 @@ namespace System
             return -1;
         }
 
-        // Returns the index of the last occurance of any character in value in the current instance.
-        // The search starts at startIndex and runs to endIndex. [startIndex,endIndex].
+        // Returns the index of the last occurrence of any character in value in the current instance.
+        // The search starts at startIndex and runs backwards to startIndex - count + 1.
         // The character at position startIndex is included in the search.  startIndex is the larger
         // index within the string.
         //
@@ -2457,11 +2514,13 @@ namespace System
                     return FormatProvider.IsPrefixIgnoreCase(this, value);
 
                 case StringComparison.Ordinal:
-                    if (this.Length < value.Length)
+                    if (this.Length < value.Length || _firstChar != value._firstChar)
                     {
                         return false;
                     }
-                    return (nativeCompareOrdinalEx(this, 0, value, 0, value.Length) == 0);
+                    return (value.Length == 1) ?
+                            true :                 // First char is the same and thats all there is to compare  
+                            StartsWithOrdinalHelper(this, value);
 
                 case StringComparison.OrdinalIgnoreCase:
                     if (this.Length < value.Length)
@@ -2593,7 +2652,6 @@ namespace System
 
         private String CreateTrimmedString(int start, int end)
         {
-            //Create a new STRINGREF and initialize it from the range determined above.
             int len = end - start + 1;
             if (len == this.Length)
             {
@@ -2619,6 +2677,12 @@ namespace System
 
             int oldLength = Length;
             int insertLength = value.Length;
+            
+            if (oldLength == 0)
+                return value;
+            if (insertLength == 0)
+                return this;
+            
             int newLength = oldLength + insertLength;
             if (newLength < 0)
                 throw new OutOfMemoryException();
@@ -2643,43 +2707,68 @@ namespace System
 
         // Replaces all instances of oldChar with newChar.
         //
-        private unsafe String ReplaceInternal(char oldChar, char newChar)
-        {
-            int firstFoundIndex = -1;
-
-            fixed (char* pChars = this)
-            {
-                for (int i = 0; i < Length; i++)
-                {
-                    if (oldChar == pChars[i])
-                    {
-                        firstFoundIndex = i;
-                        break;
-                    }
-                }
-            }
-
-            if (-1 == firstFoundIndex)
-                return this;
-
-            char[] newChars = new char[Length];
-
-            fixed (char* pChars = this)
-            {
-                //Copy the characters, doing the replacement as we go.
-                for (int i = 0; i < firstFoundIndex; i++)
-                    newChars[i] = pChars[i];
-
-                for (int i = firstFoundIndex; i < Length; i++)
-                    newChars[i] = (pChars[i] == oldChar) ? newChar : pChars[i];
-            }
-
-            return new string(newChars);
-        }
-
         public String Replace(char oldChar, char newChar)
         {
-            return ReplaceInternal(oldChar, newChar);
+            if (oldChar == newChar)
+                return this;
+
+            unsafe
+            {
+                int remainingLength = Length;
+
+                fixed (char* pChars = &_firstChar)
+                {
+                    char* pSrc = pChars;
+
+                    while (remainingLength > 0)
+                    {
+                        if (*pSrc == oldChar)
+                        {
+                            break;
+                        }
+
+                        remainingLength--;
+                        pSrc++;
+                    }
+                }
+
+                if (remainingLength == 0)
+                    return this;
+
+                String result = FastAllocateString(Length);
+
+                fixed (char* pChars = &_firstChar)
+                {
+                    fixed (char* pResult = &result._firstChar)
+                    {
+                        int copyLength = Length - remainingLength;
+
+                        //Copy the characters already proven not to match.
+                        if (copyLength > 0)
+                        {
+                            wstrcpy(pResult, pChars, copyLength);
+                        }
+
+                        //Copy the remaining characters, doing the replacement as we go.
+                        char* pSrc = pChars + copyLength;
+                        char* pDst = pResult + copyLength;
+
+                        do
+                        {
+                            char currentChar = *pSrc;
+                            if (currentChar == oldChar)
+                                currentChar = newChar;
+                            *pDst = currentChar;
+
+                            remainingLength--;
+                            pSrc++;
+                            pDst++;
+                        } while (remainingLength > 0);
+                    }
+                }
+
+                return result;
+            }
         }
 
         public String Replace(String oldValue, String newValue)
@@ -2696,9 +2785,9 @@ namespace System
 
                 int numOccurrences = 0;
                 int[] replacementIndices = new int[this.Length];
-                fixed (char* pThis = this)
+                fixed (char* pThis = &_firstChar)
                 {
-                    fixed (char* pOldValue = oldValue)
+                    fixed (char* pOldValue = &oldValue._firstChar)
                     {
                         int idx = 0;
                         int lastPossibleMatchIdx = this.Length - oldValue.Length;
@@ -2739,11 +2828,11 @@ namespace System
 
                 int dstLength = checked(this.Length + (newValue.Length - oldValue.Length) * numOccurrences);
                 String dst = FastAllocateString(dstLength);
-                fixed (char* pThis = this)
+                fixed (char* pThis = &_firstChar)
                 {
-                    fixed (char* pDst = dst)
+                    fixed (char* pDst = &dst._firstChar)
                     {
-                        fixed (char* pNewValue = newValue)
+                        fixed (char* pNewValue = &newValue._firstChar)
                         {
                             int dstIdx = 0;
                             int thisIdx = 0;
@@ -2794,7 +2883,13 @@ namespace System
             int oldLength = this.Length;
             if (count > oldLength - startIndex)
                 throw new ArgumentOutOfRangeException("count", SR.ArgumentOutOfRange_IndexCount);
+            
+            if (count == 0)
+                return this;
             int newLength = oldLength - count;
+            if (newLength == 0)
+                return string.Empty;
+            
             String result = FastAllocateString(newLength);
             unsafe
             {
@@ -3031,24 +3126,19 @@ namespace System
 
         public static String Concat(String str0, String str1, String str2)
         {
-            if (str0 == null && str1 == null && str2 == null)
+            if (IsNullOrEmpty(str0))
             {
-                return String.Empty;
+                return Concat(str1, str2);
             }
 
-            if (str0 == null)
+            if (IsNullOrEmpty(str1))
             {
-                str0 = String.Empty;
+                return Concat(str0, str2);
             }
 
-            if (str1 == null)
+            if (IsNullOrEmpty(str2))
             {
-                str1 = String.Empty;
-            }
-
-            if (str2 == null)
-            {
-                str2 = String.Empty;
+                return Concat(str0, str1);
             }
 
             int totalLength = str0.Length + str1.Length + str2.Length;
@@ -3063,29 +3153,24 @@ namespace System
 
         public static String Concat(String str0, String str1, String str2, String str3)
         {
-            if (str0 == null && str1 == null && str2 == null && str3 == null)
+            if (IsNullOrEmpty(str0))
             {
-                return String.Empty;
+                return Concat(str1, str2, str3);
             }
 
-            if (str0 == null)
+            if (IsNullOrEmpty(str1))
             {
-                str0 = String.Empty;
+                return Concat(str0, str2, str3);
             }
 
-            if (str1 == null)
+            if (IsNullOrEmpty(str2))
             {
-                str1 = String.Empty;
+                return Concat(str0, str1, str3);
             }
 
-            if (str2 == null)
+            if (IsNullOrEmpty(str3))
             {
-                str2 = String.Empty;
-            }
-
-            if (str3 == null)
-            {
-                str3 = String.Empty;
+                return Concat(str0, str1, str2);
             }
 
             int totalLength = str0.Length + str1.Length + str2.Length + str3.Length;

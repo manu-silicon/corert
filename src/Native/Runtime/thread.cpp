@@ -1,19 +1,13 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
-#include "rhcommon.h"
-#ifdef DACCESS_COMPILE
-#include "gcrhenv.h"
-#endif // DACCESS_COMPILE
-
-#ifndef DACCESS_COMPILE
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+#include "common.h"
 #include "CommonTypes.h"
-#include "daccess.h"
 #include "CommonMacros.h"
+#include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "gcrhinterface.h"
 #include "varint.h"
@@ -26,12 +20,11 @@
 #include "RWLock.h"
 #include "threadstore.h"
 #include "RuntimeInstance.h"
+#include "shash.h"
 #include "module.h"
 #include "rhbinder.h"
 #include "stressLog.h"
 #include "RhConfig.h"
-#endif // !DACCESS_COMPILE
-
 
 #ifndef DACCESS_COMPILE
 
@@ -184,6 +177,21 @@ bool Thread::IsCurrentThreadInCooperativeMode()
     return (m_pTransitionFrame == NULL);
 }
 
+//
+// This is used by the EH system to find the place where execution left managed code when an exception leaks out of a 
+// pinvoke and we need to FailFast via the appropriate class library.
+// 
+// May only be used from the same thread and while in preemptive mode with an active pinvoke on the stack.  
+//
+#ifndef DACCESS_COMPILE
+void * Thread::GetCurrentThreadPInvokeReturnAddress()
+{
+    ASSERT(ThreadStore::GetCurrentThread() == this);
+    ASSERT(!IsCurrentThreadInCooperativeMode());
+    return ((PInvokeTransitionFrame*)m_pTransitionFrame)->m_RIP;
+}
+#endif // !DACCESS_COMPILE
+
 
 
 PTR_UInt8 Thread::GetTEB()
@@ -282,7 +290,8 @@ void Thread::Construct()
     // alloc_context ever needs different initialization, a matching change to the tls_CurrentThread 
     // static initialization will need to be made.
 
-    m_uPalThreadId = PalGetCurrentThreadId();
+    m_uPalThreadIdForLogging = PalGetCurrentThreadIdForLogging();
+    m_threadId.SetToCurrentThread();
 
     HANDLE curProcessPseudo = PalGetCurrentProcess();
     HANDLE curThreadPseudo  = PalGetCurrentThread();
@@ -310,11 +319,6 @@ bool Thread::IsInitialized()
 }
 
 #endif // !DACCESS_COMPILE
-
-alloc_context * Thread::GetAllocContext()  // @TODO: I would prefer to not expose this in this way
-{
-    return dac_cast<DPTR(alloc_context)>(dac_cast<TADDR>(this) + offsetof(Thread, m_rgbAllocContextBuffer));
-}
 
 
 // -----------------------------------------------------------------------------------------------------------
@@ -374,9 +378,14 @@ bool Thread::CatchAtSafePoint()
 
 #ifndef DACCESS_COMPILE
 
-UInt32 Thread::GetPalThreadId()
+UInt64 Thread::GetPalThreadIdForLogging()
 {
-    return m_uPalThreadId;
+    return m_uPalThreadIdForLogging;
+}
+
+bool Thread::IsCurrentThread()
+{
+    return m_threadId.IsCurrentThread();
 }
 
 void Thread::Destroy()
@@ -396,10 +405,6 @@ void Thread::Destroy()
 
     RedhawkGCInterface::ReleaseAllocContext(GetAllocContext());
 
-#if _DEBUG
-    memset(this, 0x06, sizeof(*this));
-#endif // _DEBUG
-
     // Thread::Destroy is called when the thread's "home" fiber dies.  We mark the thread as "detached" here
     // so that we can validate, in our DLL_THREAD_DETACH handler, that the thread was already destroyed at that
     // point.
@@ -415,15 +420,16 @@ void Thread::GcScanRoots(void * pfnEnumCallback, void * pvCallbackData)
 #endif // !DACCESS_COMPILE
 
 #ifdef DACCESS_COMPILE
-// A trivial wrapper that unpacks the ScanCallbackData and calls the callback provided to GcScanRoots
-void GcScanRootsCallbackWrapper(PTR_RtuObjectRef ppObject, Thread::ScanCallbackData* callbackData, UInt32 flags)
+// A trivial wrapper that unpacks the DacScanCallbackData and calls the callback provided to GcScanRoots
+void GcScanRootsCallbackWrapper(PTR_RtuObjectRef ppObject, DacScanCallbackData* callbackData, UInt32 flags)
 {
-    callbackData->pfnUserCallback(ppObject, callbackData->token, flags);
+    Thread::GcScanRootsCallbackFunc * pfnUserCallback = (Thread::GcScanRootsCallbackFunc *)callbackData->pfnUserCallback;
+    pfnUserCallback(ppObject, callbackData->token, flags);
 }
 
 bool Thread::GcScanRoots(GcScanRootsCallbackFunc * pfnEnumCallback, void * token, PTR_PAL_LIMITED_CONTEXT pInitialContext)
 {
-    ScanCallbackData callbackDataWrapper;
+    DacScanCallbackData callbackDataWrapper;
     callbackDataWrapper.thread_under_crawl = this;
     callbackDataWrapper.promotion = true;
     callbackDataWrapper.token = token;
@@ -488,24 +494,17 @@ void Thread::GcScanRootsWorker(void * pfnEnumCallback, void * pvCallbackData, St
                                            pfnEnumCallback,
                                            pvCallbackData);
         
-            frameIterator.Next();
-        
-            // Iterating to the next frame may reveal a stack range we need to report conservatively (every
-            // pointer aligned value that looks like it might be a GC reference is reported as a pinned interior
-            // reference). This occurs in an edge case where a managed method whose signature the runtime is not
-            // aware of calls into the runtime which subsequently calls back out into managed code (allowing the
-            // possibility of a garbage collection). This can happen in certain interface invocation slow paths for
-            // instance. Since the original managed call may have passed GC references which are unreported by
-            // any managed method on the stack at the time of the GC we identify (again conservatively) the range
-            // of the stack that might contain these references and report everything. Since it should be a very
-            // rare occurance indeed that we actually have to do this this, it's considered a better trade-off
-            // than storing signature metadata for every potential callsite of the type described above.
-            //
-            // Due to the way this situation is detected and the stack range calculated, we will determine the
-            // stack range to report one frame later than you might expect (as we iterate to the method that
-            // called the method that called into the runtime). As such we'll never have a range to report for the
-            // first frame on the stack and we might have one to report after we've reached the base of the stack
-            // (i.e. when frameIterator.IsValid() == false). Hence the placement of this check.
+            // Each enumerated frame (including the first one) may have an associated stack range we need to
+            // report conservatively (every pointer aligned value that looks like it might be a GC reference is
+            // reported as a pinned interior reference). This occurs in an edge case where a managed method whose
+            // signature the runtime is not aware of calls into the runtime which subsequently calls back out
+            // into managed code (allowing the possibility of a garbage collection). This can happen in certain
+            // interface invocation slow paths for instance. Since the original managed call may have passed GC
+            // references which are unreported by any managed method on the stack at the time of the GC we
+            // identify (again conservatively) the range of the stack that might contain these references and
+            // report everything. Since it should be a very rare occurance indeed that we actually have to do
+            // this this, it's considered a better trade-off than storing signature metadata for every potential
+            // callsite of the type described above.
             if (frameIterator.HasStackRangeToReportConservatively())
             {
                 PTR_RtuObjectRef pLowerBound;
@@ -516,6 +515,8 @@ void Thread::GcScanRootsWorker(void * pfnEnumCallback, void * pvCallbackData, St
                                                                      pfnEnumCallback,
                                                                      pvCallbackData);
             }
+
+            frameIterator.Next();
         }
     }
 
@@ -540,9 +541,9 @@ EXTERN_C void FASTCALL RhpGcProbeHijackByref();
 
 static void* NormalHijackTargets[3]     = 
 {
-    RhpGcProbeHijackScalar, // GCRK_Scalar = 0,
-    RhpGcProbeHijackObject, // GCRK_Object  = 1,
-    RhpGcProbeHijackByref   // GCRK_Byref  = 2,
+    reinterpret_cast<void*>(RhpGcProbeHijackScalar), // GCRK_Scalar = 0,
+    reinterpret_cast<void*>(RhpGcProbeHijackObject), // GCRK_Object  = 1,
+    reinterpret_cast<void*>(RhpGcProbeHijackByref)   // GCRK_Byref  = 2,
 };
 
 #ifdef FEATURE_GC_STRESS
@@ -552,11 +553,29 @@ EXTERN_C void FASTCALL RhpGcStressHijackByref();
 
 static void* GcStressHijackTargets[3]   = 
 { 
-    RhpGcStressHijackScalar, // GCRK_Scalar = 0,
-    RhpGcStressHijackObject, // GCRK_Object  = 1,
-    RhpGcStressHijackByref   // GCRK_Byref  = 2,
+    reinterpret_cast<void*>(RhpGcStressHijackScalar), // GCRK_Scalar = 0,
+    reinterpret_cast<void*>(RhpGcStressHijackObject), // GCRK_Object  = 1,
+    reinterpret_cast<void*>(RhpGcStressHijackByref)   // GCRK_Byref  = 2,
 };
 #endif // FEATURE_GC_STRESS
+
+// static
+bool Thread::IsHijackTarget(void * address)
+{
+    for (int i = 0; i < 3; i++)
+    {
+        if (NormalHijackTargets[i] == address)
+            return true;
+    }
+#ifdef FEATURE_GC_STRESS
+    for (int i = 0; i < 3; i++)
+    {
+        if (GcStressHijackTargets[i] == address)
+            return true;
+    }
+#endif // FEATURE_GC_STRESS
+    return false;
+}
 
 bool Thread::Hijack()
 {
@@ -575,7 +594,7 @@ bool Thread::Hijack()
     return PalHijack(m_hPalThread, HijackCallback, this) <= 0;
 }
 
-UInt32_BOOL Thread::HijackCallback(HANDLE hThread, PAL_LIMITED_CONTEXT* pThreadContext, void* pCallbackContext)
+UInt32_BOOL Thread::HijackCallback(HANDLE /*hThread*/, PAL_LIMITED_CONTEXT* pThreadContext, void* pCallbackContext)
 {
     Thread* pThread = (Thread*) pCallbackContext;
 
@@ -689,14 +708,16 @@ bool Thread::InternalHijack(PAL_LIMITED_CONTEXT * pSuspendCtx, void* HijackTarge
 
             m_ppvHijackedReturnAddressLocation = ppvRetAddrLocation;
             m_pvHijackedReturnAddress = pvRetAddr;
-            *ppvRetAddrLocation = HijackTargets[retValueKind];
+            void* pvHijackTarget = HijackTargets[retValueKind];
+            ASSERT_MSG(IsHijackTarget(pvHijackTarget), "unexpected method used as hijack target");
+            *ppvRetAddrLocation = pvHijackTarget;
 
             fSuccess = true;
         }
     }
 
-    STRESS_LOG3(LF_STACKWALK, LL_INFO10000, "InternalHijack: TgtThread = %x, IP = %p, result = %d\n", 
-        GetPalThreadId(), pSuspendCtx->GetIp(), fSuccess);
+    STRESS_LOG3(LF_STACKWALK, LL_INFO10000, "InternalHijack: TgtThread = %llx, IP = %p, result = %d\n", 
+        GetPalThreadIdForLogging(), pSuspendCtx->GetIp(), fSuccess);
 
     return fSuccess;
 }
@@ -923,6 +944,9 @@ void Thread::ValidateExInfoPop(ExInfo * pExInfo, void * limitSP)
         ASSERT_MSG(pExInfo->m_kind & EK_SuperscededFlag, "popping a non-supersceded ExInfo");
         pExInfo = pExInfo->m_pPrevExInfo;
     }
+#else
+    UNREFERENCED_PARAMETER(pExInfo);
+    UNREFERENCED_PARAMETER(limitSP);
 #endif // _DEBUG
 }
 
@@ -950,8 +974,7 @@ bool Thread::IsDetached()
 
 void Thread::SetDetached()
 {
-    // https://github.com/dotnet/corert/issues/114
-    // ASSERT(!IsStateSet(TSF_Detached));
+    ASSERT(!IsStateSet(TSF_Detached));
     SetState(TSF_Detached);
 }
 
@@ -1041,11 +1064,12 @@ PTR_UInt8 Thread::AllocateThreadLocalStorageForDynamicType(UInt32 uTlsTypeOffset
     return m_pDynamicTypesTlsCells[uTlsTypeOffset];
 }
 
+#ifndef PLATFORM_UNIX
 EXTERN_C REDHAWK_API UInt32 __cdecl RhCompatibleReentrantWaitAny(UInt32_BOOL alertable, UInt32 timeout, UInt32 count, HANDLE* pHandles)
 {
     return PalCompatibleWaitAny(alertable, timeout, count, pHandles, /*allowReentrantWait:*/ TRUE);
 }
-
+#endif // PLATFORM_UNIX
 
 EXTERN_C volatile UInt32 RhpTrapThreads;
 

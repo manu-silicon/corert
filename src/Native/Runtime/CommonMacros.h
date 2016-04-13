@@ -1,12 +1,12 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
-// Some of our header files are shared with the binder, which needs the TARGET_* macros defined
-#if defined(TARGET_X64)
-#elif defined(TARGET_X86)
-#elif defined(TARGET_ARM)
+// Some of our header files are shared with the binder, which needs the _TARGET_* macros defined
+#if defined(_TARGET_AMD64_)
+#elif defined(_TARGET_X86_)
+#elif defined(_TARGET_ARM_)
+#elif defined(_TARGET_ARM64_)
 #else
 #error Unsupported architecture
 #endif
@@ -43,6 +43,7 @@ char (*COUNTOF_helper(_CountofType (&_Array)[_SizeOfArray]))[_SizeOfArray];
 
 #ifndef GCENV_INCLUDED
 #define FORCEINLINE __forceinline
+#endif // GCENV_INCLUDED
 
 inline UIntNative ALIGN_UP(UIntNative val, UIntNative alignment);
 template <typename T>
@@ -55,7 +56,6 @@ inline T* ALIGN_DOWN(T* val, UIntNative alignment);
 inline bool IS_ALIGNED(UIntNative val, UIntNative alignment);
 template <typename T>
 inline bool IS_ALIGNED(T* val, UIntNative alignment);
-#endif // GCENV_INCLUDED
 
 #ifndef DACCESS_COMPILE
 //
@@ -98,21 +98,23 @@ EXTERN_C int __cdecl memcmp(const void *,const void *,size_t);
 
 #if defined(_AMD64_)
 
-#define VIRTUAL_ALLOC_RESERVE_GRANULARITY (64*1024)    // 0x10000  (64 KB)
 #define LOG2_PTRSIZE 3
 #define POINTER_SIZE 8
 
 #elif defined(_X86_)
 
-#define VIRTUAL_ALLOC_RESERVE_GRANULARITY (64*1024)    // 0x10000  (64 KB)
 #define LOG2_PTRSIZE 2
 #define POINTER_SIZE 4
 
 #elif defined(_ARM_)
 
-#define VIRTUAL_ALLOC_RESERVE_GRANULARITY (64*1024)    // 0x10000  (64 KB)
 #define LOG2_PTRSIZE 2
 #define POINTER_SIZE 4
+
+#elif defined(_ARM64_)
+
+#define LOG2_PTRSIZE 3
+#define POINTER_SIZE 8
 
 #else
 #error Unsupported target architecture
@@ -134,6 +136,13 @@ EXTERN_C int __cdecl memcmp(const void *,const void *,size_t);
 #elif defined(_ARM_)
 
 #define DATA_ALIGNMENT  4
+#ifndef OS_PAGE_SIZE
+#define OS_PAGE_SIZE    0x1000
+#endif
+
+#elif defined(_ARM64_)
+
+#define DATA_ALIGNMENT  8
 #ifndef OS_PAGE_SIZE
 #define OS_PAGE_SIZE    0x1000
 #endif
@@ -197,3 +206,18 @@ bool inline FitsInI4(__int64 val)
 #define DECLSPEC_THREAD __declspec(thread)
 #endif // !__llvm__
 
+#ifndef GCENV_INCLUDED
+#if !defined(_INC_WINDOWS) && !defined(BINDER)
+#ifdef _WIN32
+// this must exactly match the typedef used by windows.h
+typedef long HRESULT;
+#else
+typedef int32_t HRESULT;
+#endif
+
+#define S_OK  0x0
+#define E_FAIL 0x80004005
+
+#define UNREFERENCED_PARAMETER(P)          (void)(P)
+#endif // !defined(_INC_WINDOWS) && !defined(BINDER)
+#endif // GCENV_INCLUDED

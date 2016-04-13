@@ -1,26 +1,19 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
-#include "rhcommon.h"
-#ifdef DACCESS_COMPILE
-#include "gcrhenv.h"
-#endif // DACCESS_COMPILE
-
-#ifndef DACCESS_COMPILE
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+#include "common.h"
 #include "CommonTypes.h"
 #include "CommonMacros.h"
 #include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 #include "CommonMacros.inl"
 #include "regdisplay.h"
 #include "TargetPtrs.h"
 #include "eetype.h"
 #include "ObjectLayout.h"
 #include "varint.h"
-#endif
 
 #include "gcinfo.h"
 #include "RHCodeMan.h"
@@ -29,7 +22,7 @@
 
 
 // Ensure that EEMethodInfo fits into the space reserved by MethodInfo
-STATIC_ASSERT(sizeof(EEMethodInfo) <= sizeof(MethodInfo));
+static_assert(sizeof(EEMethodInfo) <= sizeof(MethodInfo), "EEMethodInfo does not fit into a MethodInfo");
 
 EEMethodInfo * GetEEMethodInfo(MethodInfo * pMethodInfo)
 {
@@ -46,7 +39,7 @@ inline void ReportObject(GCEnumContext * hCallback, PTR_PTR_Object p, UInt32 fla
 // It should compile away to simply an inlined field access.  Since we intentionally have conditionals that 
 // are constant at compile-time, we need to disable the level-4 warning related to that.
 //
-#ifdef TARGET_ARM
+#ifdef _TARGET_ARM_
 
 #pragma warning(push)
 #pragma warning(disable:4127)   // conditional expression is constant
@@ -113,9 +106,34 @@ void ReportRegisterSet(UInt8 regSet, REGDISPLAY * pContext, GCEnumContext * hCal
     if (regSet & CSR_MASK_R8) { ReportObject(hCallback, GetRegObjectAddr<CSR_NUM_R8>(pContext), 0); }
 }
 
+#elif defined(_TARGET_ARM64_)
+
+#pragma warning(push)
+#pragma warning(disable:4127)   // conditional expression is constant
+template <CalleeSavedRegNum regNum>
+PTR_PTR_Object GetRegObjectAddr(REGDISPLAY * pContext)
+{
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+}
+#pragma warning(pop)
+
+PTR_PTR_Object GetRegObjectAddr(CalleeSavedRegNum regNum, REGDISPLAY * pContext)
+{
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+}
+
+PTR_PTR_Object GetScratchRegObjectAddr(ScratchRegNum regNum, REGDISPLAY * pContext)
+{
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+}
+
+void ReportRegisterSet(UInt8 regSet, REGDISPLAY * pContext, GCEnumContext * hCallback)
+{
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+}
 
 
-#else // TARGET_ARM
+#else // _TARGET_ARM_ && _TARGET_ARM64_
 
 #pragma warning(push)
 #pragma warning(disable:4127)   // conditional expression is constant
@@ -128,12 +146,12 @@ PTR_PTR_Object GetRegObjectAddr(REGDISPLAY * pContext)
     case CSR_NUM_RSI:  return (PTR_PTR_Object)pContext->pRsi;
     case CSR_NUM_RDI:  return (PTR_PTR_Object)pContext->pRdi;
     case CSR_NUM_RBP:  return (PTR_PTR_Object)pContext->pRbp;
-#ifdef TARGET_AMD64
+#ifdef _TARGET_AMD64_
     case CSR_NUM_R12:  return (PTR_PTR_Object)pContext->pR12;
     case CSR_NUM_R13:  return (PTR_PTR_Object)pContext->pR13;
     case CSR_NUM_R14:  return (PTR_PTR_Object)pContext->pR14;
     case CSR_NUM_R15:  return (PTR_PTR_Object)pContext->pR15;
-#endif // TARGET_AMD64
+#endif // _TARGET_AMD64_
     }
     UNREACHABLE_MSG("unexpected CalleeSavedRegNum");
 }
@@ -147,12 +165,12 @@ PTR_PTR_Object GetRegObjectAddr(CalleeSavedRegNum regNum, REGDISPLAY * pContext)
     case CSR_NUM_RSI:  return (PTR_PTR_Object)pContext->pRsi;
     case CSR_NUM_RDI:  return (PTR_PTR_Object)pContext->pRdi;
     case CSR_NUM_RBP:  return (PTR_PTR_Object)pContext->pRbp;
-#ifdef TARGET_AMD64
+#ifdef _TARGET_AMD64_
     case CSR_NUM_R12:  return (PTR_PTR_Object)pContext->pR12;
     case CSR_NUM_R13:  return (PTR_PTR_Object)pContext->pR13;
     case CSR_NUM_R14:  return (PTR_PTR_Object)pContext->pR14;
     case CSR_NUM_R15:  return (PTR_PTR_Object)pContext->pR15;
-#endif // TARGET_AMD64
+#endif // _TARGET_AMD64_
     }
     UNREACHABLE_MSG("unexpected CalleeSavedRegNum");
 }
@@ -164,12 +182,12 @@ PTR_PTR_Object GetScratchRegObjectAddr(ScratchRegNum regNum, REGDISPLAY * pConte
     case SR_NUM_RAX:  return (PTR_PTR_Object)pContext->pRax;
     case SR_NUM_RCX:  return (PTR_PTR_Object)pContext->pRcx;
     case SR_NUM_RDX:  return (PTR_PTR_Object)pContext->pRdx;
-#ifdef TARGET_AMD64
+#ifdef _TARGET_AMD64_
     case SR_NUM_R8 :  return (PTR_PTR_Object)pContext->pR8;
     case SR_NUM_R9 :  return (PTR_PTR_Object)pContext->pR9;
     case SR_NUM_R10:  return (PTR_PTR_Object)pContext->pR10;
     case SR_NUM_R11:  return (PTR_PTR_Object)pContext->pR11;
-#endif // TARGET_AMD64
+#endif // _TARGET_AMD64_
     }
     UNREACHABLE_MSG("unexpected ScratchRegNum");
 }
@@ -184,12 +202,12 @@ void ReportRegisterSet(UInt8 regSet, REGDISPLAY * pContext, GCEnumContext * hCal
     if (regSet & CSR_MASK_RSI) { ReportObject(hCallback, GetRegObjectAddr<CSR_NUM_RSI>(pContext), 0); }
     if (regSet & CSR_MASK_RDI) { ReportObject(hCallback, GetRegObjectAddr<CSR_NUM_RDI>(pContext), 0); }
     if (regSet & CSR_MASK_RBP) { ReportObject(hCallback, GetRegObjectAddr<CSR_NUM_RBP>(pContext), 0); }
-#ifdef TARGET_AMD64                                                           
+#ifdef _TARGET_AMD64_                                                           
     if (regSet & CSR_MASK_R12) { ReportObject(hCallback, GetRegObjectAddr<CSR_NUM_R12>(pContext), 0); }
 #endif
 }
 
-#endif // TARGET_ARM
+#endif // _TARGET_ARM_
 
 void ReportRegister(UInt8 regEnc, REGDISPLAY * pContext, GCEnumContext * hCallback)
 {
@@ -217,15 +235,17 @@ void ReportLocalSlot(UInt32 slotNum, REGDISPLAY * pContext, GCEnumContext * hCal
     if (pHeader->HasFramePointer())
     {
         Int32 rbpOffset;
-#ifdef TARGET_ARM
+#ifdef _TARGET_ARM_
         // ARM places the FP at the top of the locals area.
         rbpOffset = pHeader->GetFrameSize() - ((slotNum + 1) * sizeof(void *));
+#elif defined(_TARGET_ARM64_)
+        PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
 #else
-#  ifdef TARGET_AMD64
+#  ifdef _TARGET_AMD64_
         if (pHeader->GetFramePointerOffset() != 0)
             rbpOffset = (slotNum * sizeof(void *));
         else
-#  endif // TARGET_AMD64
+#  endif // _TARGET_AMD64_
             rbpOffset = -pHeader->GetPreservedRegsSaveSize() - (slotNum * sizeof(void *));
 #endif
         PTR_PTR_Object pRoot = (PTR_PTR_Object)(pContext->GetFP() + rbpOffset);
@@ -233,10 +253,10 @@ void ReportLocalSlot(UInt32 slotNum, REGDISPLAY * pContext, GCEnumContext * hCal
     }
     else
     {
-#ifdef TARGET_X86
+#ifdef _TARGET_X86_
         // @TODO: X86: need to pass in current stack level
         UNREACHABLE_MSG("NYI - ESP frames");
-#endif // TARGET_X86
+#endif // _TARGET_X86_
 
         Int32 rspOffset = pHeader->GetFrameSize() - ((slotNum + 1) * sizeof(void *));
         PTR_PTR_Object pRoot = (PTR_PTR_Object)(pContext->GetSP() + rspOffset);
@@ -250,14 +270,14 @@ void ReportStackSlot(bool framePointerBased, Int32 offset, UInt32 gcFlags, REGDI
     UIntNative basePointer;
     if (framePointerBased)
     {
-#ifdef TARGET_X86
+#ifdef _TARGET_X86_
         if (hasDynamicAlignment && offset >= 0)
             basePointer = pContext->GetPP();
         else
 #else
             // avoid warning about unused parameter
             hasDynamicAlignment;
-#endif // TARGET_X86
+#endif // _TARGET_X86_
             basePointer = pContext->GetFP();
     }
     else
@@ -556,7 +576,7 @@ ContinueUnconditionally:
             else
             {
                 bool hasDynamicAlignment = pMethodInfo->GetGCInfoHeader()->HasDynamicAlignment();
-#ifdef TARGET_X86
+#ifdef _TARGET_X86_
                 ASSERT_MSG(!hasDynamicAlignment || pMethodInfo->GetGCInfoHeader()->GetParamPointerReg() == RN_EBX, "NYI: non-EBX param pointer");
 #endif
                 // case 6 -- "stack slot" / "stack slot set"
@@ -580,10 +600,16 @@ ContinueUnconditionally:
 // the state after the function returns back to caller (IP points to after the call, Frame and Stack pointer 
 // has been reset, callee-saved registers restored, callee-UNsaved registers are trashed) 
 // Returns success of operation.
+// NOTE: When making changes to this function, it is important to check whether corresponding changes
+// are needed in GetConservativeUpperBoundForOutgoingArgs.
 bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
                                      UInt32         codeOffset,
                                      REGDISPLAY *   pContext)
 {
+#ifdef _TARGET_ARM64_
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+#endif
+
     GCInfoHeader *  pInfoHeader = pMethodInfo->GetGCInfoHeader();
 
     // We could implement this unwind if we wanted, but there really isn't any reason
@@ -597,14 +623,16 @@ bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
     UInt32 epilogOffset = 0;
     UInt32 epilogSize = 0;
     ASSERT_OR_DAC_RETURN_FALSE(!GetEpilogOffset(pMethodInfo, codeOffset, &epilogOffset, &epilogSize));
+#else 
+    UNREFERENCED_PARAMETER(codeOffset);
 #endif
 
     bool ebpFrame = pInfoHeader->HasFramePointer();
 
-#ifdef TARGET_X86
+#ifdef _TARGET_X86_
     // @TODO .. ESP-based methods with stack changes
     ASSERT_MSG(ebpFrame || !pInfoHeader->HasStackChanges(), "NYI -- ESP-based methods with stack changes");
-#endif // TARGET_X86
+#endif // _TARGET_X86_
 
     //
     // Just unwind based on the info header
@@ -613,12 +641,14 @@ bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
     UIntNative rawRSP;
     if (ebpFrame)
     {
-#ifdef TARGET_ARM
+#ifdef _TARGET_ARM_
         rawRSP = pContext->GetFP() + pInfoHeader->GetFrameSize();
+#elif defined(_TARGET_ARM64_)
+        PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
 #else
         saveSize -= sizeof(void *); // don't count RBP
         Int32 framePointerOffset = 0;
-#ifdef TARGET_AMD64
+#ifdef _TARGET_AMD64_
         framePointerOffset = pInfoHeader->GetFramePointerOffset();
 #endif
         rawRSP = pContext->GetFP() - saveSize - framePointerOffset;
@@ -630,7 +660,7 @@ bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
     }
     PTR_UIntNative RSP = (PTR_UIntNative)rawRSP;
 
-#if defined(TARGET_AMD64)
+#if defined(_TARGET_AMD64_)
     if (pInfoHeader->HasSavedXmmRegs())
     {
         typedef DPTR(Fp128) PTR_Fp128;
@@ -648,7 +678,7 @@ bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
             }
         }
     }
-#elif defined(TARGET_ARM)
+#elif defined(_TARGET_ARM_)
     UInt8 vfpRegPushedCount = pInfoHeader->GetVfpRegPushedCount();
     UInt8 vfpRegFirstPushed = pInfoHeader->GetVfpRegFirstPushed();
     UInt32 regIndex = vfpRegFirstPushed - 8;
@@ -659,9 +689,11 @@ bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
         regIndex++;
         RSP = (PTR_UIntNative)((PTR_UInt8)RSP + sizeof(UInt64));
     }
+#elif defined(_TARGET_ARM64_)
+        PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
 #endif
 
-#if defined(TARGET_X86)
+#if defined(_TARGET_X86_)
     int registerSaveDisplacement = 0;
     // registers saved at bottom of frame in Project N
     registerSaveDisplacement = pInfoHeader->GetFrameSize();
@@ -670,7 +702,7 @@ bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
     if (saveSize > 0)
     {
         CalleeSavedRegMask regMask = pInfoHeader->GetSavedRegs();
-#ifdef TARGET_AMD64
+#ifdef _TARGET_AMD64_
         if (regMask & CSR_MASK_R15) { pContext->pR15 = RSP++; }
         if (regMask & CSR_MASK_R14) { pContext->pR14 = RSP++; }
         if (regMask & CSR_MASK_R13) { pContext->pR13 = RSP++; }
@@ -678,13 +710,13 @@ bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
         if (regMask & CSR_MASK_RDI) { pContext->pRdi = RSP++; }
         if (regMask & CSR_MASK_RSI) { pContext->pRsi = RSP++; }
         if (regMask & CSR_MASK_RBX) { pContext->pRbx = RSP++; }
-#elif defined(TARGET_X86)
+#elif defined(_TARGET_X86_)
         ASSERT_MSG(ebpFrame || !(regMask & CSR_MASK_RBP), "We should never use EBP as a preserved register");
         ASSERT_MSG(!(regMask & CSR_MASK_RBX) || !pInfoHeader->HasDynamicAlignment(), "Can't have EBX as preserved regster and dynamic alignment frame pointer")
         if (regMask & CSR_MASK_RBX) { pContext->pRbx = (PTR_UIntNative)((PTR_UInt8)RSP - registerSaveDisplacement); ++RSP; } // registers saved at bottom of frame
         if (regMask & CSR_MASK_RSI) { pContext->pRsi = (PTR_UIntNative)((PTR_UInt8)RSP - registerSaveDisplacement); ++RSP; } // registers saved at bottom of frame
         if (regMask & CSR_MASK_RDI) { pContext->pRdi = (PTR_UIntNative)((PTR_UInt8)RSP - registerSaveDisplacement); ++RSP; } // registers saved at bottom of frame
-#elif defined(TARGET_ARM)       
+#elif defined(_TARGET_ARM_)       
         if (regMask & CSR_MASK_R4) { pContext->pR4 = RSP++; }
         if (regMask & CSR_MASK_R5) { pContext->pR5 = RSP++; }
         if (regMask & CSR_MASK_R6) { pContext->pR6 = RSP++; }
@@ -693,10 +725,12 @@ bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
         if (regMask & CSR_MASK_R9) { pContext->pR9 = RSP++; }
         if (regMask & CSR_MASK_R10) { pContext->pR10 = RSP++; }
         if (regMask & CSR_MASK_R11) { pContext->pR11 = RSP++; }
-#endif // TARGET_AMD64
+#elif defined(_TARGET_ARM64_)
+        PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+#endif // _TARGET_AMD64_
     }
 
-#ifndef TARGET_ARM
+#if !defined(_TARGET_ARM_) && !defined(_TARGET_ARM64_)
     if (ebpFrame)
         pContext->pRbp = RSP++;
 #endif
@@ -704,7 +738,7 @@ bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
     // handle dynamic frame alignment
     if (pInfoHeader->HasDynamicAlignment())
     {
-#ifdef TARGET_X86
+#ifdef _TARGET_X86_
         ASSERT_MSG(pInfoHeader->GetParamPointerReg() == RN_EBX, "NYI: non-EBX param pointer");
         // For x86 dynamically-aligned frames, we have two frame pointers, like this:
         //
@@ -728,13 +762,15 @@ bool EECodeManager::UnwindStackFrame(EEMethodInfo * pMethodInfo,
 
     pContext->SetAddrOfIP((PTR_PCODE)RSP); // save off the return address location
     pContext->SetIP(*RSP++);    // pop the return address
-#ifdef TARGET_X86
+#ifdef _TARGET_X86_
     // pop the callee-popped args
     RSP += (pInfoHeader->GetReturnPopSize() / sizeof(UIntNative));
 #endif
 
-#ifdef TARGET_ARM
+#ifdef _TARGET_ARM_
     RSP += pInfoHeader->ParmRegsPushedCount();
+#elif defined(_TARGET_ARM64_)
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
 #endif
 
     pContext->SetSP((UIntNative) dac_cast<TADDR>(RSP));
@@ -751,6 +787,87 @@ PTR_VOID EECodeManager::GetReversePInvokeSaveFrame(EEMethodInfo * pMethodInfo, R
     Int32 frameOffset = pHeader->GetReversePinvokeFrameOffset();
 
     return *(PTR_PTR_VOID)(pContext->GetFP() + frameOffset);
+}
+
+// Given a virtual register set that has been unwound back to an active callsite within the
+// supplied method, this function computes an upper bound value that is guaranteed to be at
+// or above the top of the block of stack-passed arguments (if any) that flowed into the
+// callsite when the call was made.  This upper bound helps the runtime apply conservative
+// GC reporting to stack-passed arguments in situations where it has no knowledge of the
+// callsite signature.
+UIntNative EECodeManager::GetConservativeUpperBoundForOutgoingArgs(EEMethodInfo * pMethodInfo, REGDISPLAY * pContext)
+{
+    UIntNative upperBound;
+    GCInfoHeader * pInfoHeader = pMethodInfo->GetGCInfoHeader();
+
+    if (pInfoHeader->GetReturnKind() == GCInfoHeader::MRK_ReturnsToNative)
+    {
+        // Reverse PInvoke case.  The embedded reverse PInvoke frame is guaranteed to reside above
+        // all outgoing arguments.
+        upperBound = pContext->GetFP() + pInfoHeader->GetReversePinvokeFrameOffset();
+    }
+    else
+    {
+        if (pInfoHeader->HasFramePointer())
+        {
+#if defined(_TARGET_ARM_)
+
+            // ARM frame pointer case.  The frame size indicates the distance between the frame pointer
+            // and the lowest callee-saved register.  The lowest callee-saved register is guaranteed to
+            // reside above all outgoing arguments.
+            ASSERT(pInfoHeader->GetSavedRegs() != 0);
+            upperBound = pContext->GetFP() + pInfoHeader->GetFrameSize();
+
+#elif defined(_TARGET_ARM64_)
+
+            PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+
+#elif defined(_TARGET_X86_)
+
+            // x86 frame pointer case.  The frame pointer is guaranteed to point to the pushed RBP
+            // value found at the top of the frame.  The pushed RBP value is guaranteed to reside above
+            // all outgoing arguments.
+            upperBound = pContext->GetFP();
+
+#elif defined(_TARGET_AMD64_)
+
+            // amd64 frame pointer case.  Like on x86, it is guaranteed that there is a pushed RBP
+            // value at the top of the frame which resides above all outgoing arguments.  Unlike x86,
+            // the frame pointer generally points to a location that is separated from the pushed RBP
+            // value by an offset that is recorded in the info header.  Recover the address of the
+            // pushed RBP value by subtracting this offset.
+            upperBound = pContext->GetFP() - pInfoHeader->GetFramePointerOffset();
+
+#else
+#error NYI - For this arch
+#endif
+        }
+        else
+        {
+            // No frame pointer is available.  In the absence of a frame pointer, the frame size
+            // indicates the distance between the post-prolog SP and the preserved registers (if any).
+            // Adding the frame size to the SP is guaranteed to yield an address above all outgoing
+            // arguments.
+            //
+            // If this frame contains one or more callee-saved register (guaranteed on ARM since at
+            // least LR is saved in all functions that contain callsites), then the computed address
+            // will point at the lowest callee-saved register (or possibly above it in the x86 case
+            // where registers are saved at the bottom of the frame).
+            //
+            // If the frame contains no callee-saved registers (impossible on ARM), then the computed
+            // address will point to the pushed return address.
+
+            upperBound = pContext->GetSP() + pInfoHeader->GetFrameSize();
+
+#if defined(_TARGET_ARM_)
+            ASSERT(pInfoHeader->GetSavedRegs() != 0);
+#elif defined(_TARGET_ARM64_)
+            PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+#endif
+        }
+    }
+
+    return upperBound;
 }
 
 PTR_VOID EECodeManager::GetFramePointer(EEMethodInfo *  pMethodInfo, 
@@ -789,10 +906,11 @@ PTR_PTR_VOID EECodeManager::GetReturnAddressLocationForHijack(EEMethodInfo *    
     // be saved in the prolog.
     if (!pHeader->IsRegSaved(CSR_MASK_LR))
         return NULL;
+#elif defined(_ARM64_)
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
 #endif // _ARM_
 
     void ** ppvResult;
-    UInt8 * RSP;
 
     UInt32 epilogOffset = 0;
     UInt32 epilogSize = 0;
@@ -801,6 +919,8 @@ PTR_PTR_VOID EECodeManager::GetReturnAddressLocationForHijack(EEMethodInfo *    
 #ifdef _ARM_
         // Disable hijacking from epilogs on ARM until we implement GetReturnAddressLocationFromEpilog.
         return NULL;
+#elif defined(_ARM64_)
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
 #else
         ppvResult = GetReturnAddressLocationFromEpilog(pHeader, pContext, epilogOffset, epilogSize);
         // Early out if GetReturnAddressLocationFromEpilog indicates a non-hijackable epilog (e.g. exception
@@ -817,7 +937,11 @@ PTR_PTR_VOID EECodeManager::GetReturnAddressLocationForHijack(EEMethodInfo *    
     // address is pushed at [r11, #4].
     ppvResult = (void **)((*pContext->pR11) + sizeof(void *));
     goto Finished;
+#elif _ARM64_
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+    goto Finished;
 #else
+
     // We are in the body of the method, so just find the return address using the unwind info.
     if (pHeader->HasFramePointer())
     {
@@ -836,18 +960,20 @@ PTR_PTR_VOID EECodeManager::GetReturnAddressLocationForHijack(EEMethodInfo *    
 #ifdef _AMD64_
         framePointerOffset = pHeader->GetFramePointerOffset();
 #endif
-        ppvResult = (void **) ((*pContext->pRbp) + sizeof(void *) - framePointerOffset);
+        ppvResult = (void **)((*pContext->pRbp) + sizeof(void *) - framePointerOffset);
         goto Finished;
     }
 
-    // We do not have a frame pointer, but we are also not in the prolog or epilog
+    {
+        // We do not have a frame pointer, but we are also not in the prolog or epilog
 
-    RSP = (UInt8 *)pContext->GetSP();
-    RSP += pHeader->GetFrameSize();
-    RSP += pHeader->GetPreservedRegsSaveSize();
+        UInt8 * RSP = (UInt8 *)pContext->GetSP();
+        RSP += pHeader->GetFrameSize();
+        RSP += pHeader->GetPreservedRegsSaveSize();
 
-    // RSP should point to the return address now.
-    ppvResult = (void**)RSP;
+        // RSP should point to the return address now.
+        ppvResult = (void**)RSP;
+    }
     goto Finished;
 #endif
 
@@ -859,9 +985,9 @@ PTR_PTR_VOID EECodeManager::GetReturnAddressLocationForHijack(EEMethodInfo *    
 
 GCRefKind EECodeManager::GetReturnValueKind(EEMethodInfo * pMethodInfo)
 {
-    STATIC_ASSERT((GCRefKind)GCInfoHeader::MRK_ReturnsScalar == GCRK_Scalar);
-    STATIC_ASSERT((GCRefKind)GCInfoHeader::MRK_ReturnsObject == GCRK_Object);
-    STATIC_ASSERT((GCRefKind)GCInfoHeader::MRK_ReturnsByref  == GCRK_Byref);
+    static_assert((GCRefKind)GCInfoHeader::MRK_ReturnsScalar == GCRK_Scalar, "GCInfoHeader::MRK_ReturnsScalar does not match GCRK_Scalar");
+    static_assert((GCRefKind)GCInfoHeader::MRK_ReturnsObject == GCRK_Object, "GCInfoHeader::MRK_ReturnsObject does not match GCRK_Object");
+    static_assert((GCRefKind)GCInfoHeader::MRK_ReturnsByref  == GCRK_Byref, "GCInfoHeader::MRK_ReturnsByref does not match GCRK_Byref");
 
     GCInfoHeader::MethodReturnKind retKind = pMethodInfo->GetGCInfoHeader()->GetReturnKind();
     switch (retKind)
@@ -928,6 +1054,7 @@ bool EECodeManager::GetEpilogOffset(EEMethodInfo * pMethodInfo, UInt32 codeOffse
 void ** EECodeManager::GetReturnAddressLocationFromEpilog(GCInfoHeader * pInfoHeader, REGDISPLAY * pContext,
                                                           UInt32 epilogOffset, UInt32 epilogSize)
 {
+    UNREFERENCED_PARAMETER(epilogSize);
     ASSERT(pInfoHeader->IsValidEpilogOffset(epilogOffset, epilogSize));
     UInt8 * pbCurrentIP   = (UInt8 *) pContext->GetIP();
     UInt8 * pbEpilogStart = pbCurrentIP - epilogOffset;
@@ -1328,7 +1455,11 @@ void ** EECodeManager::GetReturnAddressLocationFromEpilog(GCInfoHeader * pInfoHe
     // Shouldn't be any other instructions in the epilog.
     UNREACHABLE_MSG("Unknown epilog instruction");
     return NULL;
-#endif // _X86_
+
+#elif defined(_ARM64_)
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+
+#endif
 }
 
 #ifdef _DEBUG
@@ -1367,6 +1498,12 @@ bool EECodeManager::FindNextEpilog(GCInfoHeader * pInfoHeader, UInt32 methodSize
 
 #ifdef _ARM_
 #define IS_FRAMELESS() ((pInfoHeader->GetSavedRegs() & CSR_MASK_LR) == 0)
+#elif defined(_ARM64_)
+inline bool IsFramelessArm64(void)
+{
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+}
+#define IS_FRAMELESS() (IsFramelessArm64())
 #else
 #define IS_FRAMELESS() (!pInfoHeader->HasFramePointer())
 #endif
@@ -1402,6 +1539,8 @@ void CheckHijackInEpilog(GCInfoHeader * pInfoHeader, Code * pEpilog, Code * pEpi
 #elif defined(_ARM_)
     context.pR11 = &RBP_TEST_VAL;
     context.SP = RSP_TEST_VAL; 
+#elif defined(_ARM64_)
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
 #endif
 
     context.SetIP((PCODE)pEpilog);
@@ -2048,22 +2187,27 @@ bool VerifyEpilogBytesARM(GCInfoHeader * pInfoHeader, Code * pEpilogStart, UInt3
 
     return false;
 }
+#elif defined(_ARM64_)
+bool VerifyEpilogBytesARM64(GCInfoHeader * pInfoHeader, Code * pEpilogStart, UInt32 epilogSize)
+{
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
+}
 #endif // _ARM_
 
 bool EECodeManager::VerifyEpilogBytes(GCInfoHeader * pInfoHeader, Code * pEpilogStart, UInt32 epilogSize)
 {
 #ifdef _X86_
     return VerifyEpilogBytesX86(pInfoHeader, pEpilogStart, epilogSize);
-#endif // _X86_
-#ifdef _AMD64_
+#elif defined(_AMD64_)
     return VerifyEpilogBytesAMD64(pInfoHeader, pEpilogStart, epilogSize);
-#endif // _AMD64_
-#ifdef _ARM_
+#elif defined(_ARM_)
     return VerifyEpilogBytesARM(pInfoHeader, pEpilogStart, epilogSize);
+#elif defined(_ARM64_)
+    return VerifyEpilogBytesARM64(pInfoHeader, pEpilogStart, epilogSize);
 #endif
 }
 
-void EECodeManager::VerifyProlog(EEMethodInfo * pMethodInfo)
+void EECodeManager::VerifyProlog(EEMethodInfo * /*pMethodInfo*/)
 {
 }
 

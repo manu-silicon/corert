@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 
@@ -9,9 +10,9 @@ namespace Internal.IL
 {
     public sealed class InstantiatedMethodIL : MethodIL
     {
-        MethodIL _methodIL;
-        Instantiation _typeInstantiation;
-        Instantiation _methodInstantiation;
+        private MethodIL _methodIL;
+        private Instantiation _typeInstantiation;
+        private Instantiation _methodInstantiation;
 
         public InstantiatedMethodIL(MethodIL methodIL, Instantiation typeInstantiation, Instantiation methodInstantiation)
         {
@@ -41,26 +42,26 @@ namespace Internal.IL
             return _methodIL.GetInitLocals();
         }
 
-        public override TypeDesc[] GetLocals()
+        public override LocalVariableDefinition[] GetLocals()
         {
-            TypeDesc[] locals = _methodIL.GetLocals();
-            TypeDesc[] clone = null;
+            LocalVariableDefinition[] locals = _methodIL.GetLocals();
+            LocalVariableDefinition[] clone = null;
 
             for (int i = 0; i < locals.Length; i++)
             {
-                TypeDesc uninst = locals[i];
-                TypeDesc inst  = uninst.InstantiateSignature(_typeInstantiation, _methodInstantiation);
+                TypeDesc uninst = locals[i].Type;
+                TypeDesc inst = uninst.InstantiateSignature(_typeInstantiation, _methodInstantiation);
                 if (uninst != inst)
                 {
                     if (clone == null)
                     {
-                        clone = new TypeDesc[locals.Length];
+                        clone = new LocalVariableDefinition[locals.Length];
                         for (int j = 0; j < clone.Length; j++)
                         {
                             clone[j] = locals[j];
                         }
                     }
-                    clone[i] = inst;
+                    clone[i] = new LocalVariableDefinition(inst, locals[i].IsPinned);
                 }
             }
 

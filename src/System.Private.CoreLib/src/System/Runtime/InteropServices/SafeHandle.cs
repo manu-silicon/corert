@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*============================================================
 **
@@ -118,18 +119,19 @@ namespace System.Runtime.InteropServices
 
     public abstract class SafeHandle : IDisposable
     {
+        [System.Diagnostics.CodeAnalysis.SuppressMessage("Microsoft.Security", "CA2111:PointersShouldNotBeVisible")]  
         protected IntPtr handle;        // PUBLICLY DOCUMENTED handle field
 
-        private uint _state;            // Combined ref count and closed/disposed flags (so we can atomically modify them).
+        private int _state;            // Combined ref count and closed/disposed flags (so we can atomically modify them).
         private bool _ownsHandle;       // Whether we can release this handle.
 
         // Bitmasks for the _state field above.
-        private enum StateBits : uint
+        private static class StateBits
         {
-            Closed = 0x00000001,
-            Disposed = 0x00000002,
-            RefCount = 0xfffffffc,
-            RefCountOne = 4,            // Amount to increment state field to yield a ref count increment of 1
+            public const int Closed = 0x00000001;
+            public const int Disposed = 0x00000002;
+            public const int RefCount = unchecked((int)0xfffffffc);
+            public const int RefCountOne = 4;       // Amount to increment state field to yield a ref count increment of 1
         };
 
         // Creates a SafeHandle class.  Users must then set the Handle property.
@@ -138,7 +140,7 @@ namespace System.Runtime.InteropServices
         protected SafeHandle(IntPtr invalidHandleValue, bool ownsHandle)
         {
             handle = invalidHandleValue;
-            _state = (uint)StateBits.RefCountOne; // Ref count 1 and not closed or disposed.
+            _state = StateBits.RefCountOne; // Ref count 1 and not closed or disposed.
             _ownsHandle = ownsHandle;
 
             if (!ownsHandle)
@@ -225,7 +227,7 @@ namespace System.Runtime.InteropServices
 
         public bool IsClosed
         {
-            get { return (_state & (uint)StateBits.Closed) == (uint)StateBits.Closed; }
+            get { return (_state & StateBits.Closed) == StateBits.Closed; }
         }
 
         public abstract bool IsInvalid
@@ -251,15 +253,15 @@ namespace System.Runtime.InteropServices
 
         public void SetHandleAsInvalid()
         {
-            uint oldState, newState;
+            int oldState, newState;
             do
             {
                 oldState = _state;
 
-                if ((oldState & (uint)StateBits.Closed) != 0)
+                if ((oldState & StateBits.Closed) != 0)
                     return;
 
-                newState = oldState | (uint)StateBits.Closed;
+                newState = oldState | StateBits.Closed;
             } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
         }
 
@@ -343,7 +345,7 @@ namespace System.Runtime.InteropServices
 
             // Might have to perform the following steps multiple times due to
             // interference from other AddRef's and Release's.
-            uint oldState, newState;
+            int oldState, newState;
             do
             {
                 // First step is to read the current handle state. We use this as a
@@ -352,7 +354,7 @@ namespace System.Runtime.InteropServices
                 oldState = _state;
 
                 // Check for closed state.
-                if ((oldState & (uint)StateBits.Closed) != 0)
+                if ((oldState & StateBits.Closed) != 0)
                 {
                     throw new ObjectDisposedException("SafeHandle");
                 }
@@ -362,7 +364,7 @@ namespace System.Runtime.InteropServices
                 // Continue doing this until the update succeeds (because nobody
                 // modifies the state field between the read and write operations) or
                 // the state moves to closed.
-                newState = oldState + (uint)StateBits.RefCountOne;
+                newState = oldState + StateBits.RefCountOne;
             } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
             // If we got here we managed to update the ref count while the state
             // remained non closed. So we're done.
@@ -377,7 +379,7 @@ namespace System.Runtime.InteropServices
 
             // Might have to perform the following steps multiple times due to
             // interference from other AddRef's and Release's.
-            uint oldState, newState;
+            int oldState, newState;
             do
             {
                 // First step is to read the current handle state. We use this cached
@@ -391,14 +393,14 @@ namespace System.Runtime.InteropServices
                 // state and, in the case of successful state update, leave the disposed
                 // bit set. Silently do nothing if Dispose has already been called
                 // (because we advertise that as a semantic of Dispose).
-                if (fDispose && ((oldState & (uint)StateBits.Disposed) != 0))
+                if (fDispose && ((oldState & StateBits.Disposed) != 0))
                     return;
 
                 // We should never see a ref count of zero (that would imply we have
                 // unbalanced AddRef and Releases). (We might see a closed state before
                 // hitting zero though -- that can happen if SetHandleAsInvalid is
                 // used).
-                if ((oldState & (uint)StateBits.RefCount) == 0)
+                if ((oldState & StateBits.RefCount) == 0)
                 {
                     throw new ObjectDisposedException("SafeHandle");
                 }
@@ -406,7 +408,7 @@ namespace System.Runtime.InteropServices
                 // If we're proposing a decrement to zero and the handle is not closed
                 // and we own the handle then we need to release the handle upon a
                 // successful state update.
-                fPerformRelease = ((oldState & ((uint)StateBits.RefCount | (uint)StateBits.Closed)) == (uint)StateBits.RefCountOne);
+                fPerformRelease = ((oldState & (StateBits.RefCount | StateBits.Closed)) == StateBits.RefCountOne);
                 fPerformRelease &= _ownsHandle;
 
                 // If so we need to check whether the handle is currently invalid by
@@ -421,9 +423,9 @@ namespace System.Runtime.InteropServices
                 // substracting StateBits.RefCountOne from the state then OR in the bits for
                 // Dispose (if that's the reason for the Release) and closed (if the
                 // initial ref count was 1).
-                newState = (oldState - (uint)StateBits.RefCountOne) |
-                    ((oldState & (uint)StateBits.RefCount) == (uint)StateBits.RefCountOne ? (uint)StateBits.Closed : 0) |
-                    (fDispose ? (uint)StateBits.Disposed : 0);
+                newState = (oldState - StateBits.RefCountOne) |
+                    ((oldState & StateBits.RefCount) == StateBits.RefCountOne ? StateBits.Closed : 0) |
+                    (fDispose ? StateBits.Disposed : 0);
             } while (Interlocked.CompareExchange(ref _state, newState, oldState) != oldState);
 
             // If we get here we successfully decremented the ref count. Additonally we

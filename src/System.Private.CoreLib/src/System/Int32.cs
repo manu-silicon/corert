@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*============================================================
 **
@@ -90,7 +91,6 @@ namespace System
             return m_value;
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         [Pure]
         public override String ToString()
         {
@@ -98,7 +98,6 @@ namespace System
             return FormatProvider.FormatInt32(m_value, null, null);
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         [Pure]
         public String ToString(String format)
         {
@@ -106,7 +105,6 @@ namespace System
             return FormatProvider.FormatInt32(m_value, format, null);
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         [Pure]
         public String ToString(IFormatProvider provider)
         {
@@ -115,7 +113,6 @@ namespace System
         }
 
         [Pure]
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public String ToString(String format, IFormatProvider provider)
         {
             Contract.Ensures(Contract.Result<String>() != null);

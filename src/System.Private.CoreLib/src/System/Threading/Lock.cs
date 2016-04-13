@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 #pragma warning disable 0420 //passing volatile field by reference
 
@@ -26,7 +27,10 @@ namespace System.Threading
         // overloads operator == to do the right thing, and b) Lock is sealed, so we
         // don't need to waste time traversing the inheritence heirarchy.
         //
-        internal static bool IsLock(object obj) { return obj.EETypePtr == typeof(Lock).TypeHandle.EEType; }
+        internal static bool IsLock(object obj)
+        {
+            return obj.EETypePtr == EETypePtr.EETypePtrOf<Lock>();
+        }
 
         //
         // m_state layout:

@@ -1,24 +1,26 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
-#include "rhcommon.h"
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+#include "common.h"
 
 #include "CommonTypes.h"
-#include "daccess.h"
 #include "CommonMacros.h"
+#include "daccess.h"
 #include "PalRedhawkCommon.h"
+#include "CommonMacros.inl"
+#include "Volatile.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 
 #include "slist.h"
 #include "gcrhinterface.h"
+#include "shash.h"
+#include "RWLock.h"
 #include "module.h"
 #include "varint.h"
 #include "holder.h"
 #include "rhbinder.h"
 #include "Crst.h"
-#include "RWLock.h"
 #include "RuntimeInstance.h"
 #include "event.h"
 #include "regdisplay.h"
@@ -28,6 +30,9 @@
 
 #include "eetype.h"
 #include "ObjectLayout.h"
+
+#include "GCMemoryHelpers.h"
+#include "GCMemoryHelpers.inl"
 
 EXTERN_C REDHAWK_API void* REDHAWK_CALLCONV RhpPublishObject(void* pObject, UIntNative cbSize);
 
@@ -71,10 +76,10 @@ COOP_PINVOKE_HELPER(void, RhpReversePInvokeReturn, (ReversePInvokeFrame* pFrame)
 //
 // Allocations
 //
-// runtimeexports.cs -- @TODO: use C# implementation
-COOP_PINVOKE_HELPER(Object *, RhNewObject, (EEType* pEEType))
+COOP_PINVOKE_HELPER(Object *, RhpNewFast, (EEType* pEEType))
 {
-    ASSERT_MSG(!pEEType->RequiresAlign8() && !pEEType->HasFinalizer(), "NYI");
+    ASSERT(!pEEType->RequiresAlign8());
+    ASSERT(!pEEType->HasFinalizer());
 
     Thread * pCurThread = ThreadStore::GetCurrentThread();
     alloc_context * acontext = pCurThread->GetAllocContext();
@@ -104,8 +109,33 @@ COOP_PINVOKE_HELPER(Object *, RhNewObject, (EEType* pEEType))
 
     return pObject;
 }
-// runtimeexports.cs -- @TODO: use C# implementation
-COOP_PINVOKE_HELPER(Array *, RhNewArray, (EEType * pArrayEEType, int numElements))
+
+#define GC_ALLOC_FINALIZE 0x1 // TODO: Defined in gc.h
+
+COOP_PINVOKE_HELPER(Object *, RhpNewFinalizable, (EEType* pEEType))
+{
+    ASSERT(!pEEType->RequiresAlign8());
+    ASSERT(pEEType->HasFinalizer());
+
+    Thread * pCurThread = ThreadStore::GetCurrentThread();
+    Object * pObject;
+
+    size_t size = pEEType->get_BaseSize();
+
+    pObject = (Object *)RedhawkGCInterface::Alloc(pCurThread, size, GC_ALLOC_FINALIZE, pEEType);
+    if (pObject == nullptr)
+    {
+        ASSERT_UNCONDITIONALLY("NYI");  // TODO: Throw OOM
+    }
+    pObject->set_EEType(pEEType);
+
+    if (size >= RH_LARGE_OBJECT_SIZE)
+        RhpPublishObject(pObject, size);
+
+    return pObject;
+}
+
+COOP_PINVOKE_HELPER(Array *, RhpNewArray, (EEType * pArrayEEType, int numElements))
 {
     ASSERT_MSG(!pArrayEEType->RequiresAlign8(), "NYI");
 
@@ -113,10 +143,33 @@ COOP_PINVOKE_HELPER(Array *, RhNewArray, (EEType * pArrayEEType, int numElements
     alloc_context * acontext = pCurThread->GetAllocContext();
     Array * pObject;
 
-    // TODO: Overflow checks
-    size_t size = 3 * sizeof(UIntNative) + (numElements * pArrayEEType->get_ComponentSize());
-    // Align up
-    size = (size + (sizeof(UIntNative) - 1)) & ~(sizeof(UIntNative) - 1);
+    if (numElements < 0)
+    {
+        ASSERT_UNCONDITIONALLY("NYI");  // TODO: Throw overflow
+    }
+
+    size_t size;
+#ifndef BIT64
+    // if the element count is <= 0x10000, no overflow is possible because the component size is
+    // <= 0xffff, and thus the product is <= 0xffff0000, and the base size is only ~12 bytes
+    if (numElements > 0x10000)
+    {
+        // Perform the size computation using 64-bit integeres to detect overflow
+        uint64_t size64 = (uint64_t)pArrayEEType->get_BaseSize() + ((uint64_t)numElements * (uint64_t)pArrayEEType->get_ComponentSize());
+        size64 = (size64 + (sizeof(UIntNative)-1)) & ~(sizeof(UIntNative)-1);
+
+        size = (size_t)size64;
+        if (size != size64)
+        {
+            ASSERT_UNCONDITIONALLY("NYI");  // TODO: Throw overflow
+        }
+    }
+    else
+#endif // !BIT64
+    {
+        size = (size_t)pArrayEEType->get_BaseSize() + ((size_t)numElements * (size_t)pArrayEEType->get_ComponentSize());
+        size = ALIGN_UP(size, sizeof(UIntNative));
+    }
 
     UInt8* result = acontext->alloc_ptr;
     UInt8* advance = result + size;
@@ -143,7 +196,7 @@ COOP_PINVOKE_HELPER(Array *, RhNewArray, (EEType * pArrayEEType, int numElements
     return pObject;
 }
 
-COOP_PINVOKE_HELPER(MDArray *, RhNewMDArray, (EEType * pArrayEEType, int rank, ...))
+COOP_PINVOKE_HELPER(MDArray *, RhNewMDArray, (EEType * pArrayEEType, UInt32 rank, ...))
 {
     ASSERT_MSG(!pArrayEEType->RequiresAlign8(), "NYI");
 
@@ -156,7 +209,7 @@ COOP_PINVOKE_HELPER(MDArray *, RhNewMDArray, (EEType * pArrayEEType, int rank, .
 
     int numElements = va_arg(argp, int);
 
-    for (Int32 i = 1; i < rank; i++)
+    for (UInt32 i = 1; i < rank; i++)
     {
         // TODO: Overflow checks
         numElements *= va_arg(argp, Int32);
@@ -200,41 +253,61 @@ COOP_PINVOKE_HELPER(MDArray *, RhNewMDArray, (EEType * pArrayEEType, int rank, .
     return pObject;
 }
 
-COOP_PINVOKE_HELPER(void, RhpNewFast, ())
-{
-    ASSERT_UNCONDITIONALLY("NYI");
-}
-
-COOP_PINVOKE_HELPER(void, RhpNewFinalizable, ())
-{
-    ASSERT_UNCONDITIONALLY("NYI");
-}
-
-COOP_PINVOKE_HELPER(void, RhpNewArray, ())
-{
-    ASSERT_UNCONDITIONALLY("NYI");
-}
-
+#if defined(USE_PORTABLE_HELPERS)
 COOP_PINVOKE_HELPER(void, RhpInitialDynamicInterfaceDispatch, ())
 {
     ASSERT_UNCONDITIONALLY("NYI");
 }
 
-
-// finalizer.cs
-COOP_PINVOKE_HELPER(void, RhpSetHaveNewClasslibs, ())
+COOP_PINVOKE_HELPER(void, RhpInterfaceDispatch1, ())
 {
     ASSERT_UNCONDITIONALLY("NYI");
 }
+
+COOP_PINVOKE_HELPER(void, RhpInterfaceDispatch2, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(void, RhpInterfaceDispatch4, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(void, RhpInterfaceDispatch8, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(void, RhpInterfaceDispatch16, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(void, RhpInterfaceDispatch32, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(void, RhpInterfaceDispatch64, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+#endif
+
+#if defined(USE_PORTABLE_HELPERS) || !defined(_WIN32)
+typedef UIntTarget (*TargetFunc2)(UIntTarget, UIntTarget);
+COOP_PINVOKE_HELPER(UIntTarget, ManagedCallout2, (UIntTarget argument1, UIntTarget argument2, void *pTargetMethod, void *pPreviousManagedFrame))
+{
+    // @TODO Implement ManagedCallout2 on Unix
+    // https://github.com/dotnet/corert/issues/685
+    TargetFunc2 target = (TargetFunc2)pTargetMethod;
+    return (*target)(argument1, argument2);
+}
+#endif
 
 // finalizer.cs
 COOP_PINVOKE_HELPER(void, ProcessFinalizers, ())
-{
-    ASSERT_UNCONDITIONALLY("NYI");
-}
-
-// runtimeexports.cs
-COOP_PINVOKE_HELPER(void, RhpReversePInvokeBadTransition, ())
 {
     ASSERT_UNCONDITIONALLY("NYI");
 }
@@ -267,87 +340,90 @@ COOP_PINVOKE_HELPER(void, RhpGcStressHijackByref, ())
     ASSERT_UNCONDITIONALLY("NYI");
 }
 
-// TODO: The C++ write barrier helpers colide with assembly definitions in full runtime. Re-enable
-// once this file is built for portable runtime only.
-#if 0
-
-//
-// Write barriers
-//
-
-#ifdef BIT64
-// Card byte shift is different on 64bit.
-#define card_byte_shift     11
-#else
-#define card_byte_shift     10
-#endif
-
-#define card_byte(addr) (((size_t)(addr)) >> card_byte_shift)
+#ifdef USE_PORTABLE_HELPERS
 
 COOP_PINVOKE_HELPER(void, RhpAssignRef, (Object ** dst, Object * ref))
 {
+    // @TODO: USE_PORTABLE_HELPERS - Null check
     *dst = ref;
-
-    if ((uint8_t*)ref >= g_ephemeral_low && (uint8_t*)ref < g_ephemeral_high)
-    {
-        // volatile is used here to prevent fetch of g_card_table from being reordered 
-        // with g_lowest/highest_address check above. See comment in code:gc_heap::grow_brick_card_tables.
-        uint8_t * pCardByte = (uint8_t *)*(volatile uint8_t **)(&g_card_table) + card_byte((uint8_t *)dst);
-        if (*pCardByte != 0xFF)
-            *pCardByte = 0xFF;
-    }
+    InlineWriteBarrier(dst, ref);
 }
 
 COOP_PINVOKE_HELPER(void, RhpCheckedAssignRef, (Object ** dst, Object * ref))
 {
+    // @TODO: USE_PORTABLE_HELPERS - Null check
     *dst = ref;
-
-    // if the dst is outside of the heap (unboxed value classes) then we
-    //      simply exit
-    if (((uint8_t*)dst < g_lowest_address) || ((uint8_t*)dst >= g_highest_address))
-        return;
-
-    if ((uint8_t*)ref >= g_ephemeral_low && (uint8_t*)ref < g_ephemeral_high)
-    {
-        // volatile is used here to prevent fetch of g_card_table from being reordered 
-        // with g_lowest/highest_address check above. See comment in code:gc_heap::grow_brick_card_tables.
-        uint8_t* pCardByte = (uint8_t *)*(volatile uint8_t **)(&g_card_table) + card_byte((uint8_t *)dst);
-        if (*pCardByte != 0xFF)
-            *pCardByte = 0xFF;
-    }
+    InlineCheckedWriteBarrier(dst, ref);
 }
 
-#endif
+COOP_PINVOKE_HELPER(Object *, RhpCheckedLockCmpXchg, (Object ** location, Object * value, Object * comparand))
+{
+    // @TODO: USE_PORTABLE_HELPERS - Null check
+    Object * ret = (Object *)PalInterlockedCompareExchangePointer((void * volatile *)location, value, comparand);
+    InlineCheckedWriteBarrier(location, value);
+    return ret;
+}
 
-//
-// type cast stuff from TypeCast.cs
-//
-COOP_PINVOKE_HELPER(void, RhTypeCast_IsInstanceOfClass, ())
+COOP_PINVOKE_HELPER(Object *, RhpCheckedXchg, (Object ** location, Object * value))
 {
-    ASSERT_UNCONDITIONALLY("NYI");
+    // @TODO: USE_PORTABLE_HELPERS - Null check
+    Object * ret = (Object *)PalInterlockedExchangePointer((void * volatile *)location, value);
+    InlineCheckedWriteBarrier(location, value);
+    return ret;
 }
-COOP_PINVOKE_HELPER(void, RhTypeCast_CheckCastClass, ())
+
+COOP_PINVOKE_HELPER(Int32, RhpLockCmpXchg32, (Int32 * location, Int32 value, Int32 comparand))
 {
-    ASSERT_UNCONDITIONALLY("NYI");
+    // @TODO: USE_PORTABLE_HELPERS - Null check
+    return PalInterlockedCompareExchange(location, value, comparand);
 }
-COOP_PINVOKE_HELPER(void, RhTypeCast_IsInstanceOfArray, ())
+
+COOP_PINVOKE_HELPER(Int64, RhpLockCmpXchg64, (Int64 * location, Int64 value, Int32 comparand))
 {
-    ASSERT_UNCONDITIONALLY("NYI");
+    // @TODO: USE_PORTABLE_HELPERS - Null check
+    return PalInterlockedCompareExchange64(location, value, comparand);
 }
-COOP_PINVOKE_HELPER(void, RhTypeCast_CheckCastArray, ())
+
+#endif // USE_PORTABLE_HELPERS
+
+COOP_PINVOKE_HELPER(void, RhpMemoryBarrier, ())
 {
-    ASSERT_UNCONDITIONALLY("NYI");
+    PalMemoryBarrier();
 }
-COOP_PINVOKE_HELPER(void, RhTypeCast_IsInstanceOfInterface, ())
-{
-    ASSERT_UNCONDITIONALLY("NYI");
-}
-COOP_PINVOKE_HELPER(void, RhTypeCast_CheckCastInterface, ())
-{
-    ASSERT_UNCONDITIONALLY("NYI");
-}
-COOP_PINVOKE_HELPER(void, RhTypeCast_CheckVectorElemAddr, ())
+
+COOP_PINVOKE_HELPER(void, Native_GetThunksBase, ())
 {
     ASSERT_UNCONDITIONALLY("NYI");
 }
 
+COOP_PINVOKE_HELPER(void, Native_GetNumThunksPerMapping, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(void, Native_GetThunkSize, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(void, RhCallDescrWorker, (void * callDescr))
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(Int64, RhGetGcTotalMemory, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+    return 0;
+}
+
+COOP_PINVOKE_HELPER(void, RhpETWLogLiveCom, (Int32 eventType, void * ccwHandle, void * objectId, void * typeRawValue, void * iUnknown, void * vTable, Int32 comRefCount, Int32 jupiterRefCount, Int32 flags))
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+}
+
+COOP_PINVOKE_HELPER(bool, RhpETWShouldWalkCom, ())
+{
+    ASSERT_UNCONDITIONALLY("NYI");
+    return false;
+}

@@ -1,17 +1,17 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Diagnostics;
 using System.Collections.Generic;
-
 using System.Runtime.CompilerServices;
 
 namespace Internal.TypeSystem
 {
     public struct Instantiation
     {
-        TypeDesc[] _genericParameters;
+        private TypeDesc[] _genericParameters;
 
         public Instantiation(TypeDesc[] genericParameters)
         {
@@ -43,31 +43,89 @@ namespace Internal.TypeSystem
             }
         }
 
-        public IEnumerable<TypeDesc> GetEnumerator()
+        /// <summary>
+        /// Combines the given generic definition's hash code with the hashes
+        /// of the generic parameters in this instantiation
+        /// </summary>
+        public int ComputeGenericInstanceHashCode(int genericDefinitionHashCode)
         {
-            return _genericParameters;
+            return Internal.NativeFormat.TypeHashingAlgorithms.ComputeGenericInstanceHashCode(genericDefinitionHashCode, _genericParameters);
         }
 
         public static readonly Instantiation Empty = new Instantiation(TypeDesc.EmptyTypes);
+
+        public Enumerator GetEnumerator()
+        {
+            return new Enumerator(_genericParameters);
+        }
+
+        /// <summary>
+        /// Enumerator for iterating over the types in an instantiation
+        /// </summary>
+        public struct Enumerator
+        {
+            private TypeDesc[] _collection;
+            private int _currentIndex;
+
+            public Enumerator(TypeDesc[] collection)
+            {
+                _collection = collection;
+                _currentIndex = -1;
+            }
+
+            public TypeDesc Current
+            {
+                get
+                {
+                    return _collection[_currentIndex];
+                }
+            }
+
+            public bool MoveNext()
+            {
+                _currentIndex++;
+                if (_currentIndex >= _collection.Length)
+                {
+                    return false;
+                }
+                return true;
+            }
+        }
     }
 
     public abstract partial class TypeDesc
     {
         public static readonly TypeDesc[] EmptyTypes = new TypeDesc[0];
 
-        public override int GetHashCode()
-        {
-            // Inherited types are expected to override
-            return RuntimeHelpers.GetHashCode(this);
-        }
+        /// Inherited types are required to override, and should use the algorithms
+        /// in TypeHashingAlgorithms in their implementation.
+        public abstract override int GetHashCode();
 
         public override bool Equals(Object o)
         {
+            // Its only valid to compare two TypeDescs in the same context
+            Debug.Assert(o == null || !(o is TypeDesc) || Object.ReferenceEquals(((TypeDesc)o).Context, this.Context));
             return Object.ReferenceEquals(this, o);
         }
 
+#if DEBUG
+        public static bool operator ==(TypeDesc left, TypeDesc right)
+        {
+            // Its only valid to compare two TypeDescs in the same context
+            Debug.Assert(Object.ReferenceEquals(left, null) || Object.ReferenceEquals(right, null) || Object.ReferenceEquals(left.Context, right.Context));
+            return Object.ReferenceEquals(left, right);
+        }
+
+        public static bool operator !=(TypeDesc left, TypeDesc right)
+        {
+            // Its only valid to compare two TypeDescs in the same context
+            Debug.Assert(Object.ReferenceEquals(left, null) || Object.ReferenceEquals(right, null) || Object.ReferenceEquals(left.Context, right.Context));
+            return !Object.ReferenceEquals(left, right);
+        }
+#endif
+
         // The most frequently used type properties are cached here to avoid excesive virtual calls
-        TypeFlags _typeFlags;
+        private TypeFlags _typeFlags;
 
         public abstract TypeSystemContext Context
         {
@@ -147,7 +205,7 @@ namespace Internal.TypeSystem
         protected abstract TypeFlags ComputeTypeFlags(TypeFlags mask);
 
         [MethodImpl(MethodImplOptions.NoInlining)]
-        TypeFlags InitializeTypeFlags(TypeFlags mask)
+        private TypeFlags InitializeTypeFlags(TypeFlags mask)
         {
             TypeFlags flags = ComputeTypeFlags(mask);
 
@@ -242,7 +300,7 @@ namespace Internal.TypeSystem
         {
             get
             {
-                return this.Context.IsWellKnownType(this, WellKnownType.Nullable);
+                return this.Context.IsWellKnownType(GetTypeDefinition(), WellKnownType.Nullable);
             }
         }
 
@@ -302,14 +360,6 @@ namespace Internal.TypeSystem
             }
         }
 
-        public virtual TypeDesc[] ImplementedInterfaces
-        {
-            get
-            {
-                return TypeDesc.EmptyTypes;
-            }
-        }
-
         public virtual TypeDesc UnderlyingType // For enums
         {
             get
@@ -325,14 +375,6 @@ namespace Internal.TypeSystem
                 }
 
                 throw new BadImageFormatException();
-            }
-        }
-
-        public virtual string Name
-        {
-            get
-            {
-                return null;
             }
         }
 
@@ -401,6 +443,27 @@ namespace Internal.TypeSystem
             {
                 return GetTypeDefinition() == this;
             }
+        }
+
+        /// <summary>
+        /// Determine if two types share the same type definition
+        /// </summary>
+        public bool HasSameTypeDefinition(TypeDesc otherType)
+        {
+            return GetTypeDefinition() == otherType.GetTypeDefinition();
+        }
+
+        public virtual bool HasFinalizer
+        {
+            get
+            {
+                return false;
+            }
+        }
+
+        public virtual MethodDesc GetFinalizer()
+        {
+            return null;
         }
     }
 }

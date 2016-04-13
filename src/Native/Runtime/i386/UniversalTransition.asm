@@ -1,7 +1,6 @@
-;;
-;; Copyright (c) Microsoft. All rights reserved.
-;; Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-;;
+;; Licensed to the .NET Foundation under one or more agreements.
+;; The .NET Foundation licenses this file to you under the MIT license.
+;; See the LICENSE file in the project root for more information.
 
         .586
         .model  flat
@@ -33,15 +32,28 @@ ifdef FEATURE_DYNAMIC_CODE
 ;;        FRAME POINTERS, OR THE STACK WALKER CAN'T STACKWALK OUT OF HERE
 ;;
 
-; [callee return]
-; [pinvoke frame, 20h]
-; [in edx]
-; [in ecx]
-; [ConservativelyReportedScratchSpace 8h]
-; [ptr to pinvoke frame 4h]
-; [saved ebp register]
-; [caller return addr]
-
+;
+; Frame layout is:
+;
+;   {StackPassedArgs}                           ChildSP+018     CallerSP+000
+;   {CallerRetaddr}                             ChildSP+014     CallerSP-004
+;   {CallerEBP}                                 ChildSP+010     CallerSP-008
+;   {ReturnBlock (0x8 bytes)}                   ChildSP+008     CallerSP-010
+;    -- On input (i.e., when control jumps to RhpUniversalTransition), the low 4 bytes of
+;       the ReturnBlock area holds the address of the callee and the high 4 bytes holds the
+;       extra argument to pass to the callee.
+;   {IntArgRegs (edx,ecx) (0x8 bytes)}          ChildSP+000     CallerSP-018
+;   {CalleeRetaddr}                             ChildSP-004     CallerSP-01c
+;
+; NOTE: If the frame layout ever changes, the C++ UniversalTransitionStackFrame structure
+; must be updated as well.
+;
+; NOTE: The callee receives a pointer to the base of the pushed IntArgRegs, and the callee
+; has knowledge of the exact layout of the entire frame.
+;
+; NOTE: The stack walker guarantees that conservative GC reporting will be applied to
+; everything between the base of the IntArgRegs and the top of the StackPassedArgs.
+;
 
 FASTCALL_FUNC RhpUniversalTransition_FAKE_ENTRY, 0        
         ; Set up an ebp frame
@@ -49,36 +61,22 @@ FASTCALL_FUNC RhpUniversalTransition_FAKE_ENTRY, 0
         mov         ebp, esp
         push eax
         push eax
-        push eax
 ALTERNATE_ENTRY RhpUniversalTransition@0
         push ecx
         push edx
 
-        ; @TODO We are getting the thread here to avoid bifurcating PUSH_COOP_PINVOKE_FRAME, but we
-        ; really don't need the frame stored in the "hack pinvoke tunnel" because this codepath
-        ; doesn't use Enable/DisablePreemtiveGC
-
-        INLINE_GETTHREAD        edx, eax        ; edx <- Thread pointer, eax <- trashed
-
-        PUSH_COOP_PINVOKE_FRAME edx
-
-        ;; Stash the pinvoke frame's address immediately on top of the old ebp value. This
-        ;; position is important; the stack frame iterator knows about this setup.
-        mov [ebp-4], esp
-
         ;
         ; Call out to the target, while storing and reporting arguments to the GC.
         ;
-        mov  eax, [ebp-0Ch]
-        mov  edx, [ebp-8]    ; Get first argument
-        lea  ecx, [ebp-14h]  ; Get pointer to argument information
+        mov  eax, [ebp-8]    ; Get the address of the callee 
+        mov  edx, [ebp-4]    ; Get the extra argument to pass to the callee
+        lea  ecx, [ebp-10h]  ; Get pointer to edx value pushed above
         call eax
-ALTERNATE_ENTRY ReturnFromUniversalTransition
+LABELED_RETURN_ADDRESS ReturnFromUniversalTransition
 
-        POP_COOP_PINVOKE_FRAME
         pop edx
         pop ecx
-        add esp, 12
+        add esp, 8
         pop ebp
         jmp eax
 

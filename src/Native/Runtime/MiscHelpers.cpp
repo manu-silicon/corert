@@ -1,23 +1,18 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //
 // Miscellaneous unmanaged helpers called by managed code.
 //
 
-#include "rhcommon.h"
-#ifdef DACCESS_COMPILE
-#include "gcrhenv.h"
-#endif // DACCESS_COMPILE
+#include "common.h"
 #include "CommonTypes.h"
-#include "daccess.h"
 #include "CommonMacros.h"
+#include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
-#include "static_check.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "holder.h"
 #include "Crst.h"
@@ -32,6 +27,7 @@
 #include "event.h"
 #include "threadstore.h"
 #include "gcrhinterface.h"
+#include "shash.h"
 #include "module.h"
 #include "eetype.h"
 #include "ObjectLayout.h"
@@ -39,6 +35,9 @@
 #include "slist.inl"
 #include "eetype.inl"
 #include "CommonMacros.inl"
+#include "Volatile.h"
+#include "GCMemoryHelpers.h"
+#include "GCMemoryHelpers.inl"
 
 // Busy spin for the given number of iterations.
 COOP_PINVOKE_HELPER(void, RhSpinWait, (Int32 iterations))
@@ -136,11 +135,9 @@ COOP_PINVOKE_HELPER(HANDLE, RhGetModuleFromPointer, (PTR_VOID pPointerVal))
 
 COOP_PINVOKE_HELPER(HANDLE, RhGetModuleFromEEType, (EEType * pEEType))
 {
-    // Runtime allocated EETypes have no associated module, but class libraries shouldn't be able to get to
-    // any of these since they're currently only used for the canonical version of a generic EEType and we
-    // provide no means to go from the cloned version to the canonical version.
-    ASSERT(!pEEType->IsRuntimeAllocated());
-
+#if CORERT
+    return (HANDLE)(pEEType->GetModuleManager());
+#else
     // For dynamically created types, return the module handle that contains the template type
     if (pEEType->IsDynamicType())
         pEEType = pEEType->get_DynamicTemplateType();
@@ -155,10 +152,27 @@ COOP_PINVOKE_HELPER(HANDLE, RhGetModuleFromEEType, (EEType * pEEType))
     // We should never get here (an EEType not located in any module) so fail fast to indicate the bug.
     RhFailFast();
     return NULL;
+#endif // !CORERT
 }
 
 COOP_PINVOKE_HELPER(Boolean, RhFindBlob, (HANDLE hOsModule, UInt32 blobId, UInt8 ** ppbBlob, UInt32 * pcbBlob))
 {
+#if CORERT
+    ReadyToRunSectionType section =
+        (ReadyToRunSectionType)((UInt32)ReadyToRunSectionType::ReadonlyBlobRegionStart + blobId);
+    ASSERT(section <= ReadyToRunSectionType::ReadonlyBlobRegionEnd);
+
+    ModuleManager* pModule = (ModuleManager*)hOsModule;
+
+    int length;
+    void* pBlob;
+    pBlob = pModule->GetModuleSection(section, &length);
+
+    *ppbBlob = (UInt8*)pBlob;
+    *pcbBlob = (UInt32)length;
+
+    return pBlob != NULL;
+#else
     // Search for the Redhawk module contained by the OS module.
     FOREACH_MODULE(pModule)
     {
@@ -199,6 +213,7 @@ COOP_PINVOKE_HELPER(Boolean, RhFindBlob, (HANDLE hOsModule, UInt32 blobId, UInt8
     RhFailFast();
 
     return FALSE;
+#endif // !CORERT
 }
 
 // This helper is not called directly but is used by the implementation of RhpCheckCctor to locate the
@@ -313,7 +328,7 @@ COOP_PINVOKE_HELPER(UInt8 *, RhGetThreadStaticFieldAddress, (EEType * pEEType, T
     return ThreadStore::GetCurrentThread()->GetThreadLocalStorage(uiTlsIndex, uiFieldOffset);
 }
 
-#if TARGET_ARM
+#if _TARGET_ARM_
 //*****************************************************************************
 //  Extract the 16-bit immediate from ARM Thumb2 Instruction (format T2_N)
 //*****************************************************************************
@@ -359,7 +374,7 @@ inline Int32 GetThumb2BlRel24(UInt16 * p)
     // Sign-extend and return
     return (ret << 7) >> 7;
 }
-#endif // TARGET_ARM
+#endif // _TARGET_ARM_
 
 // Given a pointer to code, find out if this points to an import stub
 // or unboxing stub, and if so, return the address that stub jumps to
@@ -375,7 +390,7 @@ COOP_PINVOKE_HELPER(UInt8 *, RhGetCodeTarget, (UInt8 * pCodeOrg))
 
         bool unboxingStub = false;
 
-#ifdef TARGET_AMD64
+#ifdef _TARGET_AMD64_
         UInt8 * pCode = pCodeOrg;
 
         // is this "add rcx,8"?
@@ -404,7 +419,7 @@ COOP_PINVOKE_HELPER(UInt8 *, RhGetCodeTarget, (UInt8 * pCodeOrg))
         }
         return pCodeOrg;
 
-#elif TARGET_X86
+#elif _TARGET_X86_
         UInt8 * pCode = pCodeOrg;
 
         // is this "add ecx,4"?
@@ -432,7 +447,7 @@ COOP_PINVOKE_HELPER(UInt8 *, RhGetCodeTarget, (UInt8 * pCodeOrg))
         }
         return pCodeOrg;
 
-#elif TARGET_ARM
+#elif _TARGET_ARM_
         const UInt16 THUMB_BIT = 1;
         UInt16 * pCode = (UInt16 *)((size_t)pCodeOrg & ~THUMB_BIT);
         // is this "adds r0,4"?
@@ -457,6 +472,8 @@ COOP_PINVOKE_HELPER(UInt8 *, RhGetCodeTarget, (UInt8 * pCodeOrg))
             UInt8 * pTarget = (UInt8 *)(pCode + 2) + distToTarget + THUMB_BIT;
             return (UInt8 *)pTarget;
         }
+#elif _TARGET_ARM64_
+    PORTABILITY_ASSERT("@TODO: FIXME:ARM64");
 #else
 #error 'Unsupported Architecture'
 #endif
@@ -465,174 +482,6 @@ COOP_PINVOKE_HELPER(UInt8 *, RhGetCodeTarget, (UInt8 * pCodeOrg))
 
     return pCodeOrg;
 }
-
-FORCEINLINE void ForwardGCSafeCopy(void * dest, const void *src, size_t len)
-{
-    // All parameters must be pointer-size-aligned
-    ASSERT(IS_ALIGNED(dest, sizeof(size_t)));
-    ASSERT(IS_ALIGNED(src, sizeof(size_t)));
-    ASSERT(IS_ALIGNED(len, sizeof(size_t)));
-
-    size_t size = len;
-    UInt8 * dmem = (UInt8 *)dest;
-    UInt8 * smem = (UInt8 *)src;
-
-    // regions must be non-overlapping
-    ASSERT(dmem <= smem || smem + size <= dmem);
-
-    // copy 4 pointers at a time 
-    while (size >= 4 * sizeof(size_t))
-    {
-        size -= 4 * sizeof(size_t);
-        ((size_t *)dmem)[0] = ((size_t *)smem)[0];
-        ((size_t *)dmem)[1] = ((size_t *)smem)[1];
-        ((size_t *)dmem)[2] = ((size_t *)smem)[2];
-        ((size_t *)dmem)[3] = ((size_t *)smem)[3];
-        smem += 4 * sizeof(size_t);
-        dmem += 4 * sizeof(size_t);
-    }
-
-    // copy 2 trailing pointers, if needed
-    if ((size & (2 * sizeof(size_t))) != 0)
-    {
-        ((size_t *)dmem)[0] = ((size_t *)smem)[0];
-        ((size_t *)dmem)[1] = ((size_t *)smem)[1];
-        smem += 2 * sizeof(size_t);
-        dmem += 2 * sizeof(size_t);
-    }
-
-    // finish with one pointer, if needed
-    if ((size & sizeof(size_t)) != 0)
-    {
-        ((size_t *)dmem)[0] = ((size_t *)smem)[0];
-    }
-}
-
-FORCEINLINE void BackwardGCSafeCopy(void * dest, const void *src, size_t len)
-{
-    // All parameters must be pointer-size-aligned
-    ASSERT(IS_ALIGNED(dest, sizeof(size_t)));
-    ASSERT(IS_ALIGNED(src, sizeof(size_t)));
-    ASSERT(IS_ALIGNED(len, sizeof(size_t)));
-
-    size_t size = len;
-    UInt8 * dmem = (UInt8 *)dest + len;
-    UInt8 * smem = (UInt8 *)src + len;
-
-    // regions must be non-overlapping
-    ASSERT(smem <= dmem || dmem + size <= smem);
-
-    // copy 4 pointers at a time 
-    while (size >= 4 * sizeof(size_t))
-    {
-        size -= 4 * sizeof(size_t);
-        smem -= 4 * sizeof(size_t);
-        dmem -= 4 * sizeof(size_t);
-        ((size_t *)dmem)[3] = ((size_t *)smem)[3];
-        ((size_t *)dmem)[2] = ((size_t *)smem)[2];
-        ((size_t *)dmem)[1] = ((size_t *)smem)[1];
-        ((size_t *)dmem)[0] = ((size_t *)smem)[0];
-    }
-
-    // copy 2 trailing pointers, if needed
-    if ((size & (2 * sizeof(size_t))) != 0)
-    {
-        smem -= 2 * sizeof(size_t);
-        dmem -= 2 * sizeof(size_t);
-        ((size_t *)dmem)[1] = ((size_t *)smem)[1];
-        ((size_t *)dmem)[0] = ((size_t *)smem)[0];
-    }
-
-    // finish with one pointer, if needed
-    if ((size & sizeof(size_t)) != 0)
-    {
-        smem -= sizeof(size_t);
-        dmem -= sizeof(size_t);
-        ((size_t *)dmem)[0] = ((size_t *)smem)[0];
-    }
-}
-
-// This function fills a piece of memory in a GC safe way.  It makes the guarantee
-// that it will fill memory in at least pointer sized chunks whenever possible.
-// Unaligned memory at the beginning and remaining bytes at the end are written bytewise.
-// We must make this guarantee whenever we clear memory in the GC heap that could contain 
-// object references.  The GC or other user threads can read object references at any time, 
-// clearing them bytewise can result in a read on another thread getting incorrect data.  
-FORCEINLINE void GCSafeFillMemory(void * mem, size_t size, size_t pv)
-{
-    UInt8 * memBytes = (UInt8 *)mem;
-    UInt8 * endBytes = &memBytes[size];
-
-    // handle unaligned bytes at the beginning 
-    while (!IS_ALIGNED(memBytes, sizeof(void *)) && (memBytes < endBytes))
-        *memBytes++ = (UInt8)pv;
-
-    // now write pointer sized pieces 
-    size_t nPtrs = (endBytes - memBytes) / sizeof(void *);
-    UIntNative* memPtr = (UIntNative*)memBytes;
-    for (size_t i = 0; i < nPtrs; i++)
-        *memPtr++ = pv;
-
-    // handle remaining bytes at the end 
-    memBytes = (UInt8*)memPtr;
-    while (memBytes < endBytes)
-        *memBytes++ = (UInt8)pv;
-}
-
-// This is a GC-safe variant of memcpy.  It guarantees that the object references in the GC heap are updated atomically.
-// This is required for type safety and proper operation of the background GC.
-//
-// USAGE:   1) The caller is responsible for performing the appropriate bulk write barrier.
-//          2) The caller is responsible for hoisting any null reference exceptions to a place where the hardware 
-//             exception can be properly translated to a managed exception.  This is handled by RhpCopyMultibyte.
-//          3) The caller must ensure that all three parameters are pointer-size-aligned.  This should be the case for
-//             value types which contain GC refs anyway, so if you want to copy structs without GC refs which might be
-//             unaligned, then you must use RhpCopyMultibyteNoGCRefs.
-COOP_PINVOKE_CDECL_HELPER(void *, memcpyGCRefs, (void * dest, const void *src, size_t len))
-{ 
-    // null pointers are not allowed (they are checked by RhpCopyMultibyte)
-    ASSERT(dest != nullptr);
-    ASSERT(src != nullptr);
-
-    ForwardGCSafeCopy(dest, src, len);
-
-    // memcpy returns the destination buffer
-    return dest;
-}
-
-// This function clears a piece of memory in a GC safe way.  It makes the guarantee that it will clear memory in at 
-// least pointer sized chunks whenever possible.  Unaligned memory at the beginning and remaining bytes at the end are 
-// written bytewise. We must make this guarantee whenever we clear memory in the GC heap that could contain object 
-// references.  The GC or other user threads can read object references at any time, clearing them bytewise can result 
-// in a read on another thread getting incorrect data.
-//
-// USAGE:  The caller is responsible for hoisting any null reference exceptions to a place where the hardware exception
-//         can be properly translated to a managed exception.
-COOP_PINVOKE_CDECL_HELPER(void *, RhpInitMultibyte, (void * mem, int c, size_t size))
-{ 
-    // The caller must do the null-check because we cannot take an AV in the runtime and translate it to managed.
-    ASSERT(mem != nullptr); 
-
-    UIntNative  bv = (UInt8)c;
-    UIntNative  pv = 0;
-
-    if (bv != 0)
-    {
-        pv = 
-#if (POINTER_SIZE == 8)
-            bv << 7*8 | bv << 6*8 | bv << 5*8 | bv << 4*8 |
-#endif
-            bv << 3*8 | bv << 2*8 | bv << 1*8 | bv;
-    }
-
-    GCSafeFillMemory(mem, size, pv);
-
-    // memset returns the destination buffer
-    return mem;
-} 
-
-EXTERN_C void * __cdecl memmove(void *, const void *, size_t);
-EXTERN_C void REDHAWK_CALLCONV RhpBulkWriteBarrier(void* pMemStart, UInt32 cbMemSize);
 
 //
 // Return true if the array slice is valid
@@ -683,11 +532,11 @@ COOP_PINVOKE_HELPER(Boolean, RhpArrayCopy, (Array * pSourceArray, Int32 sourceIn
     if (pArrayType->HasReferenceFields())
     {
         if (pDestinationData <= pSourceData || pSourceData + size <= pDestinationData)
-            ForwardGCSafeCopy(pDestinationData, pSourceData, size);
+            InlineForwardGCSafeCopy(pDestinationData, pSourceData, size);
         else
-            BackwardGCSafeCopy(pDestinationData, pSourceData, size);
+            InlineBackwardGCSafeCopy(pDestinationData, pSourceData, size);
 
-        RhpBulkWriteBarrier(pDestinationData, (UInt32)size);
+        InlinedBulkWriteBarrier(pDestinationData, (UInt32)size);
     }
     else
     {
@@ -719,7 +568,7 @@ COOP_PINVOKE_HELPER(Boolean, RhpArrayClear, (Array * pArray, Int32 index, Int32 
     if (length == 0)
         return true;
 
-    GCSafeFillMemory((UInt8 *)pArray->GetArrayData() + index * componentSize, length * componentSize, 0);
+    InlineGCSafeFillMemory((UInt8 *)pArray->GetArrayData() + index * componentSize, length * componentSize, 0);
 
     return true;
 }
@@ -735,3 +584,15 @@ COOP_PINVOKE_HELPER(void*, RhGetUniversalTransitionThunk, ())
 {
     return (void*)RhpUniversalTransition;
 }
+
+#ifdef CORERT
+COOP_PINVOKE_HELPER(void*, RhpGetModuleSection, (ModuleManager* pModule, Int32 headerId, Int32* length))
+{
+    return pModule->GetModuleSection((ReadyToRunSectionType)headerId, length);
+}
+
+COOP_PINVOKE_HELPER(void*, RhpCreateModuleManager, (void* pModuleHeader))
+{
+    return ModuleManager::Create(pModuleHeader);
+}
+#endif

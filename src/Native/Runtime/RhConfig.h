@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //
 // Provides simple configuration support through environment variables. Each variable is lazily inspected on
@@ -37,8 +36,8 @@ private:
     struct ConfigPair
     {
     public:
-        WCHAR Key[CONFIG_KEY_MAXLEN + 1];  //maxlen + null terminator
-        WCHAR Value[CONFIG_VAL_MAXLEN + 1]; //maxlen + null terminator
+        TCHAR Key[CONFIG_KEY_MAXLEN + 1];  //maxlen + null terminator
+        TCHAR Value[CONFIG_VAL_MAXLEN + 1]; //maxlen + null terminator
     };
 
     //g_iniSettings is a buffer of ConfigPair structs which when initialized is of length RCV_Count
@@ -56,12 +55,12 @@ private:
 
 public:
 
-#define DEFINE_VALUE_ACCESSOR(_name)                    \
+#define DEFINE_VALUE_ACCESSOR(_name, defaultVal)        \
     UInt32 Get##_name()                                 \
     {                                                   \
         if (m_uiConfigValuesRead & (1 << RCV_##_name))  \
             return m_uiConfigValues[RCV_##_name];       \
-        UInt32 uiValue = ReadConfigValue(L"RH_" L ## #_name); \
+        UInt32 uiValue = ReadConfigValue(_T("RH_") _T(#_name), defaultVal); \
         m_uiConfigValues[RCV_##_name] = uiValue;        \
         m_uiConfigValuesRead |= 1 << RCV_##_name;       \
         return uiValue;                                 \
@@ -69,26 +68,35 @@ public:
 
 
 #ifdef _DEBUG
-#define DEBUG_CONFIG_VALUE(_name) DEFINE_VALUE_ACCESSOR(_name)
+#define DEBUG_CONFIG_VALUE(_name) DEFINE_VALUE_ACCESSOR(_name, 0)
+#define DEBUG_CONFIG_VALUE_WITH_DEFAULT(_name, defaultVal) DEFINE_VALUE_ACCESSOR(_name, defaultVal)
 #else
 #define DEBUG_CONFIG_VALUE(_name) 
+#define DEBUG_CONFIG_VALUE_WITH_DEFAULT(_name, defaultVal) 
 #endif
-#define RETAIL_CONFIG_VALUE(_name) DEFINE_VALUE_ACCESSOR(_name)
+#define RETAIL_CONFIG_VALUE(_name) DEFINE_VALUE_ACCESSOR(_name, 0)
+#define RETAIL_CONFIG_VALUE_WITH_DEFAULT(_name, defaultVal) DEFINE_VALUE_ACCESSOR(_name, defaultVal)
 #include "RhConfigValues.h"
 #undef DEBUG_CONFIG_VALUE
 #undef RETAIL_CONFIG_VALUE
+#undef DEBUG_CONFIG_VALUE_WITH_DEFAULT
+#undef RETAIL_CONFIG_VALUE_WITH_DEFAULT
 
 private:
 
-    UInt32 ReadConfigValue(_In_z_ const WCHAR *wszName);
+    UInt32 ReadConfigValue(_In_z_ const TCHAR *wszName, UInt32 uiDefault);
 
     enum RhConfigValue
     {
 #define DEBUG_CONFIG_VALUE(_name) RCV_##_name,
 #define RETAIL_CONFIG_VALUE(_name) RCV_##_name,
+#define DEBUG_CONFIG_VALUE_WITH_DEFAULT(_name, defaultVal) RCV_##_name,
+#define RETAIL_CONFIG_VALUE_WITH_DEFAULT(_name, defaultVal) RCV_##_name,
 #include "RhConfigValues.h"
 #undef DEBUG_CONFIG_VALUE
 #undef RETAIL_CONFIG_VALUE
+#undef DEBUG_CONFIG_VALUE_WITH_DEFAULT
+#undef RETAIL_CONFIG_VALUE_WITH_DEFAULT
         RCV_Count
     };
     
@@ -96,7 +104,7 @@ private:
 #define CONFIG_FILE_MAXLEN RCV_Count * sizeof(ConfigPair) + 2000  
 
 private:
-    _Ret_maybenull_z_ WCHAR* GetConfigPath();
+    _Ret_maybenull_z_ TCHAR* GetConfigPath();
 
     //Parses one line of rhconfig.ini and populates values in the passed in configPair
     //returns: true if the parsing was successful, false if the parsing failed. 
@@ -113,7 +121,7 @@ private:
     //lazily reads the file so if the file is not yet read, it will read it on first called
     //if the file is not avaliable, or unreadable zero will always be returned
     //cchOuputBuffer is the maximum number of characters to write to outputBuffer
-    UInt32 GetIniVariable(_In_z_ const WCHAR* configName, _Out_writes_all_(cchBuff) WCHAR* outputBuffer, _In_ UInt32 cchOuputBuffer);
+    UInt32 GetIniVariable(_In_z_ const TCHAR* configName, _Out_writes_all_(cchOuputBuffer) TCHAR* outputBuffer, _In_ UInt32 cchOuputBuffer);
 
     static bool priv_isspace(char c)
     {

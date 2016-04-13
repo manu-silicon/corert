@@ -1,7 +1,6 @@
-;;
-;; Copyright (c) Microsoft. All rights reserved.
-;; Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-;;
+;; Licensed to the .NET Foundation under one or more agreements.
+;; The .NET Foundation licenses this file to you under the MIT license.
+;; See the LICENSE file in the project root for more information.
 
         .586
         .model  flat
@@ -50,7 +49,7 @@ FASTCALL_FUNC ManagedCallout2, 16
         ;; we can just go. The _ReturnFromManagedCallout2 label must immediately follow the call instruction.
         mov     eax, [ebp + 08h]
         call    eax
-ALTERNATE_ENTRY ReturnFromManagedCallout2
+LABELED_RETURN_ADDRESS ReturnFromManagedCallout2
 
         ;; Pop the ebp frame and return.
         mov     esp, ebp

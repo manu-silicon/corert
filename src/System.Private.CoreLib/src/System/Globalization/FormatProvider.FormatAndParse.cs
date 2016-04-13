@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Globalization;
@@ -38,7 +39,6 @@ namespace System.Globalization
                 return returnValue;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             private unsafe static Boolean HexNumberToUInt32(ref NumberBuffer number, ref UInt32 value)
             {
                 Int32 i = number.scale;
@@ -93,7 +93,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             private unsafe static Boolean HexNumberToUInt64(ref NumberBuffer number, ref UInt64 value)
             {
                 Int32 i = number.scale;
@@ -148,7 +147,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             private unsafe static Boolean NumberToInt32(ref NumberBuffer number, ref Int32 value)
             {
                 Int32 i = number.scale;
@@ -190,7 +188,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             private unsafe static Boolean NumberToInt64(ref NumberBuffer number, ref Int64 value)
             {
                 Int32 i = number.scale;
@@ -232,7 +229,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             private unsafe static Boolean NumberToUInt32(ref NumberBuffer number, ref UInt32 value)
             {
                 Int32 i = number.scale;
@@ -265,7 +261,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             private unsafe static Boolean NumberToUInt64(ref NumberBuffer number, ref UInt64 value)
             {
                 Int32 i = number.scale;
@@ -298,7 +293,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal static Decimal ParseDecimal(String value, NumberStyles options, IFormatProvider provider)
             {
                 NumberFormatInfo numfmt = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -313,7 +307,6 @@ namespace System.Globalization
                 return result;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Double ParseDouble(String value, NumberStyles options, IFormatProvider provider)
             {
                 if (value == null)
@@ -354,7 +347,6 @@ namespace System.Globalization
                 return d;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Int32 ParseInt32(String s, NumberStyles style, IFormatProvider provider)
             {
                 NumberFormatInfo info = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -381,7 +373,6 @@ namespace System.Globalization
                 return i;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Int64 ParseInt64(String value, NumberStyles options, IFormatProvider provider)
             {
                 NumberFormatInfo numfmt = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -408,7 +399,6 @@ namespace System.Globalization
                 return i;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Single ParseSingle(String value, NumberStyles options, IFormatProvider provider)
             {
                 if (value == null)
@@ -453,7 +443,6 @@ namespace System.Globalization
                 return castSingle;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static UInt32 ParseUInt32(String value, NumberStyles options, IFormatProvider provider)
             {
                 NumberFormatInfo numfmt = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -481,7 +470,6 @@ namespace System.Globalization
                 return i;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static UInt64 ParseUInt64(String value, NumberStyles options, IFormatProvider provider)
             {
                 NumberFormatInfo numfmt = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -506,7 +494,6 @@ namespace System.Globalization
                 return i;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             private unsafe static void StringToNumber(String str, NumberStyles options, ref NumberBuffer number, NumberFormatInfo info, Boolean parseDecimal)
             {
                 if (str == null)
@@ -526,7 +513,6 @@ namespace System.Globalization
                 }
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Boolean TryParseDecimal(String value, NumberStyles options, IFormatProvider provider, out Decimal result)
             {
                 NumberFormatInfo numfmt = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -546,7 +532,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Boolean TryParseDouble(String value, NumberStyles options, IFormatProvider provider, out Double result)
             {
                 NumberFormatInfo numfmt = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -565,7 +550,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Boolean TryParseInt32(String s, NumberStyles style, IFormatProvider provider, out Int32 result)
             {
                 NumberFormatInfo info = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -595,7 +579,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Boolean TryParseInt64(String s, NumberStyles style, IFormatProvider provider, out Int64 result)
             {
                 NumberFormatInfo info = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -625,7 +608,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Boolean TryParseSingle(String value, NumberStyles options, IFormatProvider provider, out Single result)
             {
                 NumberFormatInfo numfmt = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -651,7 +633,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Boolean TryParseUInt32(String s, NumberStyles style, IFormatProvider provider, out UInt32 result)
             {
                 NumberFormatInfo info = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -681,7 +662,6 @@ namespace System.Globalization
                 return true;
             }
 
-            [System.Security.SecuritySafeCritical]  // auto-generated
             internal unsafe static Boolean TryParseUInt64(String s, NumberStyles style, IFormatProvider provider, out UInt64 result)
             {
                 NumberFormatInfo info = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
@@ -1093,35 +1073,6 @@ namespace System.Globalization
             {
                 NumberFormatInfo nfi = provider == null ? NumberFormatInfo.CurrentInfo : NumberFormatInfo.GetInstance(provider);
                 return s.Equals(nfi.NaNSymbol);
-            }
-
-            private static unsafe void DoubleToNumber(double value, int precision, ref NumberBuffer number)
-            {
-                number.precision = precision;
-                if (DoubleHelper.Exponent(value) == 0x7ff)
-                {
-                    number.scale = DoubleHelper.Mantissa(value) != 0 ? SCALE_NAN : SCALE_INF;
-                    number.sign = DoubleHelper.Sign(value);
-                    number.digits[0] = '\0';
-                }
-                else
-                {
-                    byte* src = stackalloc byte[_CVTBUFSIZE];
-                    int sign;
-                    fixed (NumberBuffer* pNumber = &number)
-                    {
-                        RuntimeImports._ecvt_s(src, _CVTBUFSIZE, value, precision, &pNumber->scale, &sign);
-                    }
-                    number.sign = sign != 0;
-
-                    char* dst = number.digits;
-                    if ((char)*src != '0')
-                    {
-                        while (*src != 0)
-                            *dst++ = (char)*src++;
-                    }
-                    *dst = '\0';
-                }
             }
 
             #region Decimal Number Formatting Helpers

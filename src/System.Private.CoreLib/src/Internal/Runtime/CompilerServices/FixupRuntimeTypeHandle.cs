@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 
@@ -7,17 +8,26 @@ namespace Internal.Runtime.CompilerServices
 {
     public unsafe struct FixupRuntimeTypeHandle
     {
+#if !CLR_RUNTIMETYPEHANDLE
         private IntPtr _value;
+#endif
 
         public FixupRuntimeTypeHandle(RuntimeTypeHandle runtimeTypeHandle)
         {
+#if CLR_RUNTIMETYPEHANDLE
+            throw new NotImplementedException(); // CORERT-TODO: RuntimeTypeHandle
+#else
             _value = *(IntPtr*)&runtimeTypeHandle;
+#endif
         }
 
         public RuntimeTypeHandle RuntimeTypeHandle
         {
             get
             {
+#if CLR_RUNTIMETYPEHANDLE
+                throw new NotImplementedException(); // CORERT-TODO: RuntimeTypeHandle
+#else
                 // Managed debugger uses this logic to figure out the interface's type
                 // Update managed debugger too whenever this is changed.
                 // See CordbObjectValue::WalkPtrAndTypeData in debug\dbi\values.cpp
@@ -32,6 +42,7 @@ namespace Internal.Runtime.CompilerServices
                     *(IntPtr*)&returnValue = _value;
                     return returnValue;
                 }
+#endif
             }
         }
     }

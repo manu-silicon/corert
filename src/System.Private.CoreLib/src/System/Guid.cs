@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Globalization;
@@ -1277,7 +1278,6 @@ namespace System
 
         // This will create a new guid.  Since we've now decided that constructors should 0-init,
         // we need a method that allows users to create a guid.
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public static Guid NewGuid()
         {
             // CoCreateGuid should never return Guid.Empty, since it attempts to maintain some
@@ -1285,7 +1285,7 @@ namespace System
             // how extensively it checks for known values.
             Contract.Ensures(Contract.Result<Guid>() != Guid.Empty);
 
-            Interop._GUID g;
+            Guid g;
             int hr = Interop.mincore.CoCreateGuid(out g);
             // We don't expect that this will ever throw an error, none are even documented, and so we don't want to pull 
             // in the HR to ComException mappings into the core library just for this so we will try a generic exception if 
@@ -1296,10 +1296,7 @@ namespace System
                 ex.SetErrorCode(hr);
                 throw ex;
             }
-
-            return new Guid(g.Data1, g.Data2, g.Data3,
-                g.Data4[0], g.Data4[1], g.Data4[2], g.Data4[3],
-                g.Data4[4], g.Data4[5], g.Data4[6], g.Data4[7]);
+            return g;
         }
 
         public String ToString(String format)
@@ -1313,13 +1310,11 @@ namespace System
             return (char)((a > 9) ? a - 10 + 0x61 : a + 0x30);
         }
 
-        [System.Security.SecurityCritical]
         unsafe private static int HexsToChars(char* guidChars, int offset, int a, int b)
         {
             return HexsToChars(guidChars, offset, a, b, false);
         }
 
-        [System.Security.SecurityCritical]
         unsafe private static int HexsToChars(char* guidChars, int offset, int a, int b, bool hex)
         {
             if (hex)
@@ -1342,7 +1337,6 @@ namespace System
 
         // IFormattable interface
         // We currently ignore provider
-        [System.Security.SecuritySafeCritical]
         private String ToString(String format, IFormatProvider provider)
         {
             if (format == null || format.Length == 0)

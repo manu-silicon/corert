@@ -1,6 +1,7 @@
 set(COMMON_RUNTIME_SOURCES
     allocheap.cpp
-    assert.cpp
+    rhassert.cpp
+    CachedInterfaceDispatch.cpp
     Crst.cpp
     DebugEventSource.cpp
     dllmain.cpp
@@ -10,6 +11,7 @@ set(COMMON_RUNTIME_SOURCES
     FinalizerHelpers.cpp
     gcdump.cpp
     GCHelpers.cpp
+    GCMemoryHelpers.cpp
     gcrhenv.cpp
     gcrhscan.cpp
     GcStressControl.cpp
@@ -18,11 +20,11 @@ set(COMMON_RUNTIME_SOURCES
     MathHelpers.cpp
     MiscHelpers.cpp
     module.cpp
+    ModuleManager.cpp
     ObjectLayout.cpp
     OptionalFieldsRuntime.cpp
     portable.cpp
     profheapwalkhelper.cpp
-    Profiling.cpp
     RestrictedCallouts.cpp
     RHCodeMan.cpp
     RhConfig.cpp
@@ -35,10 +37,12 @@ set(COMMON_RUNTIME_SOURCES
     SyncClean.cpp
     thread.cpp
     threadstore.cpp
+    UniversalTransitionHelpers.cpp
     
     ../gc/gccommon.cpp
     ../gc/gceewks.cpp
     ../gc/gcwks.cpp
+    ../gc/gcscan.cpp
     ../gc/handletable.cpp
     ../gc/handletablecache.cpp
     ../gc/handletablecore.cpp
@@ -47,20 +51,25 @@ set(COMMON_RUNTIME_SOURCES
 )
 
 set(FULL_RUNTIME_SOURCES
-    # AsmOffsetsVerify.cpp
+    AsmOffsetsVerify.cpp
+)
+
+set(RUNTIME_SOURCES_ARCH_ASM
 )
 
 set(PORTABLE_RUNTIME_SOURCES
 )
+
+include_directories(inc)
 
 if(WIN32)
 
   include_directories(windows)
 
   list(APPEND COMMON_RUNTIME_SOURCES
-    ../gc/env/gcenv.windows.cpp    
     windows/PalRedhawkCommon.cpp
     windows/PalRedhawkMinWin.cpp
+    windows/CoffNativeCodeManager.cpp
   )
 
   if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
@@ -68,63 +77,53 @@ if(WIN32)
     set(ASM_SUFFIX asm)
   endif()
 
+  list(APPEND RUNTIME_SOURCES_ARCH_ASM
+    ${ARCH_SOURCES_DIR}/GC.${ASM_SUFFIX}
+    ${ARCH_SOURCES_DIR}/ExceptionHandling.${ASM_SUFFIX}
+    ${ARCH_SOURCES_DIR}/ManagedCalloutThunk.${ASM_SUFFIX}
+  )
+
 else()
 
   include_directories(unix)
 
   list(APPEND COMMON_RUNTIME_SOURCES
-    ../gc/env/gcenv.unix.cpp    
-    unix/PalRedhawkCommon.cpp
     unix/PalRedhawkUnix.cpp
   )
 
   if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
     set(ARCH_SOURCES_DIR amd64)
-    set(ASM_SUFFIX s)
+    set(ASM_SUFFIX S)
+  elseif(CLR_CMAKE_PLATFORM_ARCH_ARM64)
+    set(ARCH_SOURCES_DIR arm64)
+    set(ASM_SUFFIX S)
+  elseif(CLR_CMAKE_PLATFORM_ARCH_ARM)
+    set(ARCH_SOURCES_DIR arm)
+    set(ASM_SUFFIX S)
   endif()
 
 endif()
 
-set(RUNTIME_SOURCES_ARCH_ASM
+list(APPEND RUNTIME_SOURCES_ARCH_ASM
   ${ARCH_SOURCES_DIR}/WriteBarriers.${ASM_SUFFIX}
+  ${ARCH_SOURCES_DIR}/Interlocked.${ASM_SUFFIX}
+  ${ARCH_SOURCES_DIR}/StubDispatch.${ASM_SUFFIX}
 )
-if(CLR_CMAKE_PLATFORM_ARCH_AMD64)
-  add_definitions(-D_TARGET_AMD64_=1)
-  add_definitions(-D_AMD64_)
-  add_definitions(-DAMD64)
-  add_definitions(-DTARGET_X64)
-  add_definitions(-DTARGET_AMD64)
-  add_definitions(-D_WIN64=1)
-elseif(CLR_CMAKE_PLATFORM_ARCH_I386)
-  add_definitions(-D_TARGET_X86_=1)
-  add_definitions(-D_X86_)
-  add_definitions(-DTARGET_X86)
-  add_definitions(-D_WIN32=1)
-elseif(CLR_CMAKE_PLATFORM_ARCH_ARM)
-  add_definitions(-D_TARGET_ARM_=1)
-  add_definitions(-D_ARM_)
-  add_definitions(-DTARGET_ARM)
-  add_definitions(-D_WIN32=1)
-elseif(CLR_CMAKE_PLATFORM_ARCH_ARM64)
-  add_definitions(-D_TARGET_ARM64_=1)
-  add_definitions(-D_WIN64=1)
-else()
-  clr_unknown_arch()
-endif()
 
-add_definitions(-DAPP_LOCAL_RUNTIME)
+# Add architecture specific folder for looking up headers.
+convert_to_absolute_path(ARCH_SOURCES_DIR ${ARCH_SOURCES_DIR})
+include_directories(${ARCH_SOURCES_DIR})
+
 add_definitions(-DFEATURE_BACKGROUND_GC)
 add_definitions(-DFEATURE_BASICFREEZE)
-add_definitions(-DFEATURE_CLR_EH)
 add_definitions(-DFEATURE_CONSERVATIVE_GC)
 add_definitions(-DFEATURE_CUSTOM_IMPORTS)
 add_definitions(-DFEATURE_DYNAMIC_CODE)
 add_compile_options($<$<CONFIG:Debug>:-DFEATURE_GC_STRESS>)
-add_definitions(-DFEATURE_PROFILING)
 add_definitions(-DFEATURE_REDHAWK)
-add_definitions(-DFEATURE_SHARED_GENERICS)
 add_definitions(-DVERIFY_HEAP)
-
+add_definitions(-DCORERT)
+add_definitions(-DFEATURE_CACHED_INTERFACE_DISPATCH)
 add_definitions(-D_LIB)
 
 if(WIN32)
@@ -140,19 +139,18 @@ if(WIN32)
   add_compile_options(/fp:precise)
   add_compile_options(/EHsc)
 else()
-  add_definitions(-DPAL_STDCPP_COMPAT)
   add_definitions(-DNO_UI_ASSERT)
-  add_compile_options(-Wno-format)
-  add_compile_options(-Wno-unused-variable)
-  add_compile_options(-Wno-unused-private-field)
-  add_compile_options(-Wno-tautological-undefined-compare)
 
-  add_compile_options(-Wno-unknown-pragmas)
+  add_compile_options(-Wno-format)
   add_compile_options(-Wno-ignored-attributes)
-  add_compile_options(-Wno-unused-value)
-  add_compile_options(-Wno-undefined-inline)
-  add_compile_options(-Wno-unused-function)
   add_compile_options(-Wno-self-assign)
+  add_compile_options(-Wno-tautological-undefined-compare)
+  add_compile_options(-Wno-undefined-inline)
+  add_compile_options(-Wno-unknown-pragmas)
+  add_compile_options(-Wno-unused-function)
+  add_compile_options(-Wno-unused-private-field)
+  add_compile_options(-Wno-unused-value)
+  add_compile_options(-Wno-unused-variable)
 
   add_compile_options(-Qunused-arguments)
 

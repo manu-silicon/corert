@@ -1,9 +1,8 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 // ---------------------------------------------------------------------------
-// TypeHashingAlgorithms.cs
-//
 // Generic functions to compute the hashcode value of types
 // ---------------------------------------------------------------------------
 
@@ -69,7 +68,7 @@ namespace Internal.NativeFormat
             return hash1 ^ hash2;
         }
 
-        public static int ComputeArrayTypeHashCode(int elementTypeHashcode, int rank)
+        public static int ComputeArrayTypeHashCode(int elementTypeHashCode, int rank)
         {
             // Arrays are treated as generic types in some parts of our system. The array hashcodes are 
             // carefully crafted to be the same as the hashcodes of their implementation generic types.
@@ -85,7 +84,7 @@ namespace Internal.NativeFormat
                 hashCode = ComputeNameHashCode("System.MDArrayRank" + rank.ToString() + "`1");
             }
 
-            hashCode = (hashCode + _rotl(hashCode, 13)) ^ elementTypeHashcode;
+            hashCode = (hashCode + _rotl(hashCode, 13)) ^ elementTypeHashCode;
             return (hashCode + _rotl(hashCode, 15));
         }
 
@@ -95,9 +94,9 @@ namespace Internal.NativeFormat
         }
 
 
-        public static int ComputePointerTypeHashCode(int pointeeTypeHashcode)
+        public static int ComputePointerTypeHashCode(int pointeeTypeHashCode)
         {
-            return (pointeeTypeHashcode + _rotl(pointeeTypeHashcode, 5)) ^ 0x12D0;
+            return (pointeeTypeHashCode + _rotl(pointeeTypeHashCode, 5)) ^ 0x12D0;
         }
 
         public static int ComputePointerTypeHashCode<T>(T pointeeType)
@@ -106,9 +105,9 @@ namespace Internal.NativeFormat
         }
 
 
-        public static int ComputeByrefTypeHashCode(int parameterTypeHashcode)
+        public static int ComputeByrefTypeHashCode(int parameterTypeHashCode)
         {
-            return (parameterTypeHashcode + _rotl(parameterTypeHashcode, 7)) ^ 0x4C85;
+            return (parameterTypeHashCode + _rotl(parameterTypeHashCode, 7)) ^ 0x4C85;
         }
 
         public static int ComputeByrefTypeHashCode<T>(T parameterType)
@@ -117,9 +116,9 @@ namespace Internal.NativeFormat
         }
 
 
-        public static int ComputeNestedTypeHashCode(int enclosingTypeHashcode, int nestedTypeNameHash)
+        public static int ComputeNestedTypeHashCode(int enclosingTypeHashCode, int nestedTypeNameHash)
         {
-            return (enclosingTypeHashcode + _rotl(enclosingTypeHashcode, 11)) ^ nestedTypeNameHash;
+            return (enclosingTypeHashCode + _rotl(enclosingTypeHashCode, 11)) ^ nestedTypeNameHash;
         }
 
 
@@ -134,15 +133,34 @@ namespace Internal.NativeFormat
             return (hashcode + _rotl(hashcode, 15));
         }
 
-        public static int ComputeGenericInstanceHashCode(int genericDefinitionHashCode, Internal.TypeSystem.Instantiation genericTypeArguments)
+        /// <summary>
+        /// Produce a hashcode for a specific method
+        /// </summary>
+        /// <param name="typeHashCode">HashCode of the type that owns the method</param>
+        /// <param name="nameOrNameAndGenericArgumentsHashCode">HashCode of either the name of the method (for non-generic methods) or the GenericInstanceHashCode of the name+generic arguments of the method.</param>
+        /// <returns></returns>
+        public static int ComputeMethodHashCode(int typeHashCode, int nameOrNameAndGenericArgumentsHashCode)
         {
-            int hashcode = genericDefinitionHashCode;
-            for (int i = 0; i < genericTypeArguments.Length; i++)
+            // TODO! This hash combining function isn't good, but it matches logic used in the past
+            // consider changing to a better combining function once all uses use this function
+            return typeHashCode ^ nameOrNameAndGenericArgumentsHashCode;
+        }
+
+        /// <summary>
+        /// Produce a hashcode for a generic signature variable
+        /// </summary>
+        /// <param name="index">zero based index</param>
+        /// <param name="method">true if the signature variable describes a method</param>
+        public static int ComputeSignatureVariableHashCode(int index, bool method)
+        {
+            if (method)
             {
-                int argumentHashCode = genericTypeArguments[i].GetHashCode();
-                hashcode = (hashcode + _rotl(hashcode, 13)) ^ argumentHashCode;
+                return index * 0x7822381 + 0x54872645;
             }
-            return (hashcode + _rotl(hashcode, 15));
+            else
+            {
+                return index * 0x5498341 + 0x832424;
+            }
         }
     }
 }

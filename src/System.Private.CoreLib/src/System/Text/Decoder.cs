@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Text;
 using System;
@@ -116,7 +117,6 @@ namespace System.Text
 
         // We expect this to be the workhorse for NLS Encodings, but for existing
         // ones we need a working (if slow) default implementation)
-        [System.Security.SecurityCritical]  // auto-generated
         [System.Runtime.InteropServices.ComVisible(false)]
         internal virtual unsafe int GetCharCount(byte* bytes, int count, bool flush)
         {
@@ -180,7 +180,6 @@ namespace System.Text
         // the char[] to our char* output buffer.  If the result count was wrong, we
         // could easily overflow our output buffer.  Therefore we do an extra test
         // when we copy the buffer so that we don't overflow charCount either.
-        [System.Security.SecurityCritical]  // auto-generated
         [System.Runtime.InteropServices.ComVisible(false)]
         internal virtual unsafe int GetChars(byte* bytes, int byteCount,
                                               char* chars, int charCount, bool flush)

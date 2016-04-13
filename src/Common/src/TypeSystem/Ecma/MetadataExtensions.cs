@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Reflection;
@@ -9,7 +10,7 @@ namespace Internal.TypeSystem.Ecma
 {
     public static class MetadataExtensions
     {
-        public static bool HasCustomAttribute(this MetadataReader metadataReader, CustomAttributeHandleCollection customAttributes, 
+        public static bool HasCustomAttribute(this MetadataReader metadataReader, CustomAttributeHandleCollection customAttributes,
             string attributeNamespace, string attributeName)
         {
             foreach (var attributeHandle in customAttributes)
@@ -18,7 +19,7 @@ namespace Internal.TypeSystem.Ecma
                 if (!metadataReader.GetAttributeNamespaceAndName(attributeHandle, out namespaceHandle, out nameHandle))
                     continue;
 
-                if (metadataReader.StringComparer.Equals(namespaceHandle, attributeNamespace) 
+                if (metadataReader.StringComparer.Equals(namespaceHandle, attributeNamespace)
                     && metadataReader.StringComparer.Equals(nameHandle, attributeName))
                 {
                     return true;
@@ -103,9 +104,24 @@ namespace Internal.TypeSystem.Ecma
             }
         }
 
-        private static bool IsNested(TypeAttributes flags)
+        public static BlobReader GetCustomAttributeBlobReader(this MetadataReader reader, CustomAttributeHandle handle)
         {
-            return (flags & ((TypeAttributes)0x00000006)) != 0;
+            BlobReader result = reader.GetBlobReader(reader.GetCustomAttribute(handle).Value);
+            if (result.ReadInt16() != 1)
+                throw new BadImageFormatException();
+            return result;
+        }
+
+        // This mask is the fastest way to check if a type is nested from its flags,
+        // but it should not be added to the BCL enum as its semantics can be misleading.
+        // Consider, for example, that (NestedFamANDAssem & NestedMask) == NestedFamORAssem.
+        // Only comparison of the masked value to 0 is meaningful, which is different from
+        // the other masks in the enum.
+        private const TypeAttributes NestedMask = (TypeAttributes)0x00000006;
+
+        public static bool IsNested(this TypeAttributes flags)
+        {
+            return (flags & NestedMask) != 0;
         }
     }
 }

@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 //
 //   This is a standin for the SR class used throughout FX.
 //
@@ -21,7 +22,7 @@ namespace System
         // not have such assemblies depend on internal contratcs as we can decide to make these assemblies portable.
         //
 
-        static Object s_resourceMap;
+        private static Object s_resourceMap;
         private const string MoreInfoLink = @". For more information, visit http://go.microsoft.com/fwlink/?LinkId=623485";
 
         private static Object ResourceMap

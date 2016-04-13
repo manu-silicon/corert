@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 ////////////////////////////////////////////////////////////////////////////
 //
@@ -128,7 +129,6 @@ namespace System.Globalization
             return (Compare(string1, string2, CompareOptions.None));
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public unsafe virtual int Compare(String string1, String string2, CompareOptions options)
         {
             if (options == CompareOptions.OrdinalIgnoreCase)
@@ -202,7 +202,6 @@ namespace System.Globalization
         }
 
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public unsafe virtual int Compare(String string1, int offset1, int length1, String string2, int offset2, int length2, CompareOptions options)
         {
             if (options == CompareOptions.OrdinalIgnoreCase)
@@ -269,7 +268,6 @@ namespace System.Globalization
                                  options);
         }
 
-        [System.Security.SecurityCritical]
         private static int CompareOrdinal(string string1, int offset1, int length1, string string2, int offset2, int length2)
         {
             int result = String.CompareOrdinal(string1, offset1, string2, offset2,
@@ -341,7 +339,6 @@ namespace System.Globalization
         //  String.Empty, true is returned.
         //
         ////////////////////////////////////////////////////////////////////////
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public unsafe virtual bool IsPrefix(String source, String prefix, CompareOptions options)
         {
             if (source == null || prefix == null)
@@ -394,7 +391,6 @@ namespace System.Globalization
         //  String.Empty, true is returned.
         //
         ////////////////////////////////////////////////////////////////////////
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public unsafe virtual bool IsSuffix(String source, String suffix, CompareOptions options)
         {
             if (source == null || suffix == null)
@@ -525,7 +521,6 @@ namespace System.Globalization
             return IndexOf(source, value, startIndex, count, CompareOptions.None);
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public unsafe virtual int IndexOf(String source, char value, int startIndex, int count, CompareOptions options)
         {
             // Validate inputs
@@ -553,7 +548,6 @@ namespace System.Globalization
         }
 
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public unsafe virtual int IndexOf(String source, String value, int startIndex, int count, CompareOptions options)
         {
             // Validate inputs
@@ -685,7 +679,6 @@ namespace System.Globalization
         }
 
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public unsafe virtual int LastIndexOf(String source, char value, int startIndex, int count, CompareOptions options)
         {
             // Verify Arguments
@@ -729,7 +722,6 @@ namespace System.Globalization
         }
 
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public unsafe virtual int LastIndexOf(String source, String value, int startIndex, int count, CompareOptions options)
         {
             // Verify Arguments

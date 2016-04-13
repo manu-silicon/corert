@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 // =+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+=+
 //
@@ -68,21 +69,21 @@ namespace System.Threading
 
             if (result == WAIT_FAILED)
             {
-                uint error = Interop.mincore.GetLastError();
+                int error = (int)Interop.mincore.GetLastError();
                 switch (error)
                 {
-                    case (uint)Interop.Constants.ErrorInvalidParameter:
+                    case Interop.mincore.Errors.ERROR_INVALID_PARAMETER:
                         throw new ArgumentException();
 
-                    case (uint)Interop.Constants.ErrorAccessDenied:
+                    case Interop.mincore.Errors.ERROR_ACCESS_DENIED:
                         throw new UnauthorizedAccessException();
 
-                    case (uint)Interop.Constants.ErrorNotEnoughMemory:
+                    case Interop.mincore.Errors.ERROR_NOT_ENOUGH_MEMORY:
                         throw new OutOfMemoryException();
 
                     default:
                         Exception ex = new Exception();
-                        ex.SetErrorCode((int)error);
+                        ex.SetErrorCode(error);
                         throw ex;
                 }
             }

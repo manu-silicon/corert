@@ -1,16 +1,15 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
-#include "rhcommon.h"
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+#include "common.h"
 #include "CommonTypes.h"
-#include "daccess.h"
 #include "CommonMacros.h"
+#include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
 #include "gcrhinterface.h"
 
-#include "assert.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "varint.h"
 #include "regdisplay.h"
@@ -25,7 +24,7 @@ bool UninitDLL(HANDLE hPalInstance);
 void DllThreadAttach(HANDLE hPalInstance);
 void DllThreadDetach();
 
-EXTERN_C UInt32_BOOL WINAPI RtuDllMain(HANDLE hPalInstance, UInt32 dwReason, void* pvReserved)
+EXTERN_C UInt32_BOOL WINAPI RtuDllMain(HANDLE hPalInstance, UInt32 dwReason, void* /*pvReserved*/)
 {
     switch (dwReason)
     {

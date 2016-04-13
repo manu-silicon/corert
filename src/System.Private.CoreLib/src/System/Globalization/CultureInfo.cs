@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 ////////////////////////////////////////////////////////////////////////////
 //
@@ -114,9 +115,9 @@ namespace System.Globalization
         private static volatile CultureInfo s_DefaultThreadCurrentCulture;
 
         [ThreadStatic]
-        private static volatile CultureInfo s_currentThreadCulture;
+        private static CultureInfo s_currentThreadCulture;
         [ThreadStatic]
-        private static volatile CultureInfo s_currentThreadUICulture;
+        private static CultureInfo s_currentThreadUICulture;
 
         private static readonly Lock s_lock = new Lock();
         private static volatile LowLevelDictionary<string, CultureInfo> s_NameCachedCultures;
@@ -394,7 +395,6 @@ namespace System.Globalization
         public static CultureInfo DefaultThreadCurrentCulture
         {
             get { return s_DefaultThreadCurrentCulture; }
-            [System.Security.SecuritySafeCritical]  // auto-generated
             set
             {
                 // If you add pre-conditions to this method, check to see if you also need to
@@ -407,7 +407,6 @@ namespace System.Globalization
         public static CultureInfo DefaultThreadCurrentUICulture
         {
             get { return s_DefaultThreadCurrentUICulture; }
-            [System.Security.SecuritySafeCritical]  // auto-generated
             set
             {
                 //If they're trying to use a Culture with a name that we can't use in resource lookup,
@@ -538,7 +537,6 @@ namespace System.Globalization
         ////////////////////////////////////////////////////////////////////////
         public virtual String DisplayName
         {
-            [System.Security.SecuritySafeCritical]  // auto-generated
             get
             {
                 Contract.Ensures(Contract.Result<String>() != null);
@@ -559,7 +557,6 @@ namespace System.Globalization
         ////////////////////////////////////////////////////////////////////////
         public virtual String NativeName
         {
-            [System.Security.SecuritySafeCritical]  // auto-generated
             get
             {
                 Contract.Ensures(Contract.Result<String>() != null);
@@ -578,7 +575,6 @@ namespace System.Globalization
         ////////////////////////////////////////////////////////////////////////
         public virtual String EnglishName
         {
-            [System.Security.SecuritySafeCritical]  // auto-generated
             get
             {
                 Contract.Ensures(Contract.Result<String>() != null);
@@ -589,7 +585,6 @@ namespace System.Globalization
         // ie: en
         public virtual String TwoLetterISOLanguageName
         {
-            [System.Security.SecuritySafeCritical]  // auto-generated
             get
             {
                 Contract.Ensures(Contract.Result<String>() != null);

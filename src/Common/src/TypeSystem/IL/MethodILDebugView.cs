@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using Internal.TypeSystem;
 using System;
@@ -31,7 +32,7 @@ namespace Internal.IL
                 sb.Append(_methodIL.GetMaxStack());
                 sb.AppendLine();
 
-                TypeDesc[] locals = _methodIL.GetLocals();
+                LocalVariableDefinition[] locals = _methodIL.GetLocals();
                 if (locals != null && locals.Length > 0)
                 {
                     sb.Append(".locals ");
@@ -47,8 +48,10 @@ namespace Internal.IL
                             sb.AppendLine(",");
                             sb.Append(' ', 4);
                         }
-                        sb.Append(locals[i].ToString());
+                        sb.Append(locals[i].Type.ToString());
                         sb.Append(" ");
+                        if (locals[i].IsPinned)
+                            sb.Append("pinned ");
                         sb.Append("V_");
                         sb.Append(i);
                     }
@@ -57,7 +60,7 @@ namespace Internal.IL
                 sb.AppendLine();
 
                 int offset = 0;
-                
+
                 Func<int, string> resolver = token => _methodIL.GetObject(token).ToString();
 
                 while (offset < ilBytes.Length)

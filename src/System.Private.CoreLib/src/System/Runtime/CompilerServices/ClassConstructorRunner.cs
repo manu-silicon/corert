@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Threading;
@@ -29,8 +30,28 @@ namespace System.Runtime.CompilerServices
         //
         // No attempt is made to detect or break deadlocks due to other synchronization mechanisms.
         //==============================================================================================================
+#if !CORERT
         [RuntimeExport("CheckStaticClassConstruction")]
-        public static unsafe void* EnsureClassConstructorRun(void* returnValue, StaticClassConstructionContext* pContext)
+        public static unsafe void* CheckStaticClassConstruction(void* returnValue, StaticClassConstructionContext* pContext)
+        {
+            EnsureClassConstructorRun(pContext);
+            return returnValue;
+        }
+#else
+        private unsafe static object CheckStaticClassConstructionReturnGCStaticBase(StaticClassConstructionContext* context, object gcStaticBase)
+        {
+            EnsureClassConstructorRun(context);
+            return gcStaticBase;
+        }
+
+        private unsafe static IntPtr CheckStaticClassConstructionReturnNonGCStaticBase(StaticClassConstructionContext* context, IntPtr nonGcStaticBase)
+        {
+            EnsureClassConstructorRun(context);
+            return nonGcStaticBase;
+        }
+#endif
+
+        public static unsafe void EnsureClassConstructorRun(StaticClassConstructionContext* pContext)
         {
             IntPtr pfnCctor = pContext->cctorMethodAddress;
             NoisyLog("EnsureClassConstructorRun, cctor={0}, thread={1}", pfnCctor, CurrentManagedThreadId);
@@ -40,7 +61,7 @@ namespace System.Runtime.CompilerServices
             if (pContext->initialized == 1)
             {
                 NoisyLog("Cctor already run, cctor={0}, thread={1}", pfnCctor, CurrentManagedThreadId);
-                return returnValue;
+                return;
             }
 
             CctorHandle cctor = Cctor.GetCctor(pContext);
@@ -106,8 +127,6 @@ namespace System.Runtime.CompilerServices
                 Cctor.Release(cctor);
             }
             NoisyLog("EnsureClassConstructorRun complete, cctor={0}, thread={1}", pfnCctor, CurrentManagedThreadId);
-
-            return returnValue;
         }
 
         //=========================================================================================================
@@ -145,7 +164,7 @@ namespace System.Runtime.CompilerServices
                 // If the threads are deadlocked for any reason other a class constructor cycling, this loop will never 
                 // terminate - this is by design. If the user code inside the class constructors were to 
                 // deadlock themselves, then that's a bug in user code.
-                for (; ;)
+                for (;;)
                 {
                     lock (s_cctorGlobalLock)
                     {

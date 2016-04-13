@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*=============================================================================
 **
@@ -41,7 +42,6 @@ namespace System.Threading
 
         public SafeWaitHandle SafeWaitHandle
         {
-            [System.Security.SecurityCritical]
             get
             {
                 if (waitHandle == null)
@@ -51,7 +51,6 @@ namespace System.Threading
                 return waitHandle;
             }
 
-            [System.Security.SecurityCritical]
             set
             { waitHandle = value; }
         }
@@ -82,13 +81,11 @@ namespace System.Threading
             return WaitOne(-1);
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         private bool WaitOne(long timeout)
         {
             return InternalWaitOne(waitHandle, timeout);
         }
 
-        [System.Security.SecurityCritical]  // auto-generated
         internal static bool InternalWaitOne(SafeWaitHandle waitableSafeHandle, long millisecondsTimeout)
         {
             if (waitableSafeHandle == null)
@@ -111,7 +108,6 @@ namespace System.Threading
         }
 
 #if FEATURE_LEGACYNETCFFAS
-        [System.Security.SecurityCritical]
         internal bool WaitOneWithoutFAS()
         {
             // version of waitone without fast application switch (FAS) support
@@ -175,7 +171,6 @@ namespace System.Threading
             }
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public static bool WaitAll(WaitHandle[] waitHandles, int millisecondsTimeout)
         {
             if (waitHandles == null)
@@ -261,7 +256,6 @@ namespace System.Threading
         ** signalled or timeout milliseonds have elapsed.
         ========================================================================*/
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public static int WaitAny(WaitHandle[] waitHandles, int millisecondsTimeout)
         {
             if (waitHandles == null)
@@ -346,7 +340,6 @@ namespace System.Threading
             throw new AbandonedMutexException(location, handle);
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         protected virtual void Dispose(bool explicitDisposing)
         {
             if (waitHandle != null)
@@ -361,24 +354,24 @@ namespace System.Threading
             GC.SuppressFinalize(this);
         }
 
-        internal static Exception ExceptionFromCreationError(uint errorCode, string path)
+        internal static Exception ExceptionFromCreationError(int errorCode, string path)
         {
-            switch ((Interop.Constants)errorCode)
+            switch (errorCode)
             {
-                case Interop.Constants.ErrorPathNotFound:
+                case Interop.mincore.Errors.ERROR_PATH_NOT_FOUND:
                     return new IOException(SR.Format(SR.IO_PathNotFound_Path, path));
 
-                case Interop.Constants.ErrorAccessDenied:
+                case Interop.mincore.Errors.ERROR_ACCESS_DENIED:
                     return new UnauthorizedAccessException(SR.Format(SR.UnauthorizedAccess_IODenied_Path, path));
 
-                case Interop.Constants.ErrorAlreadyExists:
+                case Interop.mincore.Errors.ERROR_ALREADY_EXISTS:
                     return new IOException(SR.Format(SR.IO_AlreadyExists_Name, path));
 
-                case Interop.Constants.ErrorFilenameExcedRange:
+                case Interop.mincore.Errors.ERROR_FILENAME_EXCED_RANGE:
                     return new PathTooLongException();
 
                 default:
-                    return new IOException(SR.Arg_IOException, (int)errorCode);
+                    return new IOException(SR.Arg_IOException, errorCode);
             }
         }
     }

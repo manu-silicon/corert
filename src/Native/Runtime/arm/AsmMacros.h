@@ -1,7 +1,6 @@
-;;
-;; Copyright(c) Microsoft.All rights reserved.
-;; Licensed under the MIT license.See LICENSE file in the project root for full license information.
-;;
+;; Licensed to the.NET Foundation under one or more agreements.
+;; The.NET Foundation licenses this file to you under the MIT license.
+;; See the LICENSE file in the project root for more information.
 
 ;; OS provided macros
 #include <ksarm.h>
@@ -15,9 +14,6 @@ TSF_Attached                    equ 0x01
 TSF_SuppressGcStress            equ 0x08
 TSF_DoNotTriggerGc              equ 0x10
 TSF_SuppressGcStress__OR__TSF_DoNotTriggerGC equ 0x18
-
-;; Slot number of the Finalize virtual method.
-METHOD_SLOT_Finalize            equ 0
 
 ;; GC type flags
 GC_ALLOC_FINALIZE               equ 1
@@ -44,10 +40,12 @@ PTFF_R0_IS_GCREF        equ 0x00004000  ;; iff PTFF_SAVE_R0: set -> r0 is Object
 PTFF_R0_IS_BYREF        equ 0x00008000  ;; iff PTFF_SAVE_R0: set -> r0 is ByRef, clear -> r0 is Object or scalar
 
 
+#ifndef CORERT  // Hardcoded TLS offsets are not compatible with static linking
 ;;
 ;; This constant, unfortunately, cannot be validated at build time.
 ;;
 OFFSETOF__TLS__tls_CurrentThread                    equ  0x10
+#endif
 
 ;;
 ;; Rename fields of nested structs

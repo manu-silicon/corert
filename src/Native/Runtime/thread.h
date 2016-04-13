@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 #include "forward_declarations.h"
 
 struct alloc_context;
@@ -10,14 +9,19 @@ class ThreadStore;
 class CLREventStatic;
 class Thread;
 
+// The offsets of some fields in the thread (in particular, m_pTransitionFrame) are known to the compiler and get 
+// inlined into the code.  Let's make sure they don't change just because we enable/disable server GC in a particular
+// runtime build.
+#define KEEP_THREAD_LAYOUT_CONSTANT
+
 #if defined(_X86_) || defined(_ARM_)
-# ifdef FEATURE_SVR_GC
+# if defined(FEATURE_SVR_GC) || defined(KEEP_THREAD_LAYOUT_CONSTANT)
 #  define SIZEOF_ALLOC_CONTEXT 40
 # else // FEATURE_SVR_GC
 #  define SIZEOF_ALLOC_CONTEXT 28
 # endif // FEATURE_SVR_GC
-#elif defined(_AMD64_)
-# ifdef FEATURE_SVR_GC
+#elif defined(_AMD64_) || defined(_ARM64_)
+# if defined(FEATURE_SVR_GC) || defined(KEEP_THREAD_LAYOUT_CONSTANT)
 #  define SIZEOF_ALLOC_CONTEXT 56
 # else // FEATURE_SVR_GC
 #  define SIZEOF_ALLOC_CONTEXT 40
@@ -77,7 +81,8 @@ struct ThreadBuffer
     PTR_VOID                m_pStackLow;
     PTR_VOID                m_pStackHigh;
     PTR_UInt8               m_pTEB;                                 // Pointer to OS TEB structure for this thread
-    UInt32                  m_uPalThreadId;                         // @TODO: likely debug-only 
+    UInt64                  m_uPalThreadIdForLogging;               // @TODO: likely debug-only 
+    EEThreadId              m_threadId;               
     PTR_VOID                m_pThreadStressLog;                     // pointer to head of thread's StressLogChunks
 #ifdef FEATURE_GC_STRESS
     UInt32                  m_uRand;                                // current per-thread random number
@@ -161,26 +166,15 @@ public:
     bool                IsInitialized();
 
     alloc_context *     GetAllocContext();  // @TODO: I would prefer to not expose this in this way
-    UInt32              GetPalThreadId();
 
 #ifndef DACCESS_COMPILE
+    UInt64              GetPalThreadIdForLogging();
+    bool                IsCurrentThread();
+
     void                GcScanRoots(void * pfnEnumCallback, void * pvCallbackData);
 #else
-
     typedef void GcScanRootsCallbackFunc(PTR_RtuObjectRef ppObject, void* token, UInt32 flags);
     bool GcScanRoots(GcScanRootsCallbackFunc * pfnCallback, void * token, PTR_PAL_LIMITED_CONTEXT pInitialContext);
-
-    // Ideally we wouldn't need this wrapper, but PromoteCarefully needs access to the
-    // thread and a promotion field. We aren't assuming the user's token will have this data.
-    struct ScanCallbackData
-    {
-        Thread* thread_under_crawl;               // the thread being scanned
-        bool promotion;                           // are we emulating the GC promote phase or relocate phase?
-                                                  // different references are reported for each
-        void* token;                              // the callback data passed to GCScanRoots
-        GcScanRootsCallbackFunc* pfnUserCallback; // the callback passed in to GcScanRoots
-    };
-
 #endif
 
     bool                Hijack();
@@ -227,6 +221,9 @@ public:
     bool                IsCurrentThreadInCooperativeMode();
 
     PTR_VOID            GetTransitionFrameForStackTrace();
+    void *              GetCurrentThreadPInvokeReturnAddress();
+
+    static bool         IsHijackTarget(void * address);
 
     // -------------------------------------------------------------------------------------------------------
     // LEGACY APIs: do not use except from GC itself
@@ -255,3 +252,41 @@ public:
     void ReversePInvoke(ReversePInvokeFrame * pFrame);
     void ReversePInvokeReturn(ReversePInvokeFrame * pFrame);
 };
+
+#ifndef GCENV_INCLUDED
+typedef DPTR(Object) PTR_Object;
+typedef DPTR(PTR_Object) PTR_PTR_Object;
+#endif // !GCENV_INCLUDED
+#ifdef DACCESS_COMPILE
+
+// The DAC uses DebuggerEnumGcRefContext in place of a GCCONTEXT when doing reference
+// enumeration. The GC passes through additional data in the ScanContext which the debugger
+// neither has nor needs. While we could refactor the GC code to make an interface
+// with less coupling, that might affect perf or make integration messier. Instead
+// we use some typedefs so DAC and runtime can get strong yet distinct types.
+
+
+// Ideally we wouldn't need this wrapper, but PromoteCarefully needs access to the
+// thread and a promotion field. We aren't assuming the user's token will have this data.
+struct DacScanCallbackData
+{
+    Thread* thread_under_crawl;               // the thread being scanned
+    bool promotion;                           // are we emulating the GC promote phase or relocate phase?
+                                              // different references are reported for each
+    void* token;                              // the callback data passed to GCScanRoots
+    void* pfnUserCallback;                    // the callback passed in to GcScanRoots
+    uintptr_t stack_limit;                    // Lowest point on the thread stack that the scanning logic is permitted to read
+};
+
+typedef DacScanCallbackData EnumGcRefScanContext;
+typedef void EnumGcRefCallbackFunc(PTR_PTR_Object, EnumGcRefScanContext* callbackData, UInt32 flags);
+
+#else // DACCESS_COMPILE
+#ifndef GCENV_INCLUDED
+struct ScanContext;
+typedef void promote_func(PTR_PTR_Object, ScanContext*, unsigned);
+#endif // !GCENV_INCLUDED
+typedef promote_func EnumGcRefCallbackFunc;
+typedef ScanContext  EnumGcRefScanContext;
+
+#endif // DACCESS_COMPILE

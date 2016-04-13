@@ -1,20 +1,13 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
-#include "rhcommon.h"
-#ifdef DACCESS_COMPILE
-#include "gcrhenv.h"
-#endif // DACCESS_COMPILE
-
-#ifndef DACCESS_COMPILE
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+#include "common.h"
 #include "CommonTypes.h"
-#include "daccess.h"
 #include "CommonMacros.h"
+#include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
-#include "static_check.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "holder.h"
 #include "Crst.h"
@@ -22,13 +15,8 @@
 #include "RWLock.h"
 #include "RuntimeInstance.h"
 #include "gcrhinterface.h"
+#include "shash.h"
 #include "module.h"
-#else
-#include "rhbinder.h"
-#include "runtimeinstance.h"
-#include "gcrhinterface.h"
-#include "module.h"
-#endif
 
 // Macro nonsense to get around limitations of the C++ preprocessor.
 #define MAKE_WIDE_STRING(_str) L ## _str
@@ -53,7 +41,9 @@ UInt32 __stdcall ProfileThread(void *pv)
 
 void RuntimeInstance::InitProfiling(ModuleHeader *pModuleHeader)
 {
-#ifndef APP_LOCAL_RUNTIME //need to sort out how to get this thread started, where to log, etc., without violating the WACK
+#ifdef APP_LOCAL_RUNTIME //need to sort out how to get this thread started, where to log, etc., without violating the WACK
+    UNREFERENCED_PARAMETER(pModuleHeader);
+#else
     if (!m_fProfileThreadCreated && pModuleHeader->GetProfilingEntries() != NULL)
     {
         // this module has profile data, and we don't have a profile-writing thread yet
@@ -90,7 +80,7 @@ void RuntimeInstance::WriteProfileInfo()
             else
                 basicName += 1; // skip past the '\'
             size_t basicNameLength = wcslen(basicName);
-            size_t dirNameLength = PalGetEnvironmentVariableW(L"LOCALAPPDATA", profileName, MAX_PATH);
+            size_t dirNameLength = PalGetEnvironmentVariable(L"LOCALAPPDATA", profileName, MAX_PATH);
 
             // make sure the names are not so long as to cause trouble
             const size_t MAX_SAFE_LENGTH = MAX_PATH - 50;

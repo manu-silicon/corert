@@ -1,19 +1,13 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
-#include "rhcommon.h"
-#ifdef DACCESS_COMPILE
-#include "gcrhenv.h"
-#endif // DACCESS_COMPILE
-#if !defined(DACCESS_COMPILE)
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+#include "common.h"
 #include "CommonTypes.h"
-#include "daccess.h"
 #include "CommonMacros.h"
+#include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
-#include "static_check.h"
+#include "rhassert.h"
 #include "type_traits.hpp"
 #include "slist.h"
 #include "holder.h"
@@ -21,13 +15,13 @@
 #include "RWLock.h"
 #include "RuntimeInstance.h"
 #include "gcrhinterface.h"
+#include "shash.h"
 #include "module.h"
 #include "DebugEventSource.h"
 
 #include "slist.inl"
 
 #include "DebugEvents.h"
-#endif //!DACCESS_COMPILE
 
 GVAL_IMPL_INIT(UInt32, g_DebuggerEventsFilter, 0);
 

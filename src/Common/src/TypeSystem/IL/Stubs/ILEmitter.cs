@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -7,18 +8,33 @@ using System.Collections.Generic;
 using Internal.IL;
 using Internal.TypeSystem;
 
+using Debug = System.Diagnostics.Debug;
+
 namespace Internal.IL.Stubs
 {
     public class ILCodeStream
     {
-        static readonly byte[] s_empty = new byte[0];
+        private struct LabelAndOffset
+        {
+            public readonly ILCodeLabel Label;
+            public readonly int Offset;
+            public LabelAndOffset(ILCodeLabel label, int offset)
+            {
+                Label = label;
+                Offset = offset;
+            }
+        }
 
         internal byte[] _instructions;
         internal int _length;
+        internal int _startOffsetForLinking;
+
+        private ArrayBuilder<LabelAndOffset> _offsetsNeedingPatching;
 
         internal ILCodeStream()
         {
-            _instructions = s_empty;
+            _instructions = Array.Empty<byte>();
+            _startOffsetForLinking = -1;
         }
 
         private void EmitByte(byte b)
@@ -49,10 +65,10 @@ namespace Internal.IL.Stubs
             EmitByte((byte)opcode);
         }
 
-        public void Emit(ILOpcode opcode, int token)
+        public void Emit(ILOpcode opcode, ILToken token)
         {
             Emit(opcode);
-            EmitUInt32(token);
+            EmitUInt32((int)token);
         }
 
         public void EmitLdc(int value)
@@ -86,8 +102,10 @@ namespace Internal.IL.Stubs
             }
         }
 
-        public void EmitLdLoc(int index)
+        public void EmitLdLoc(ILLocalVariable variable)
         {
+            int index = (int)variable;
+
             if (index < 4)
             {
                 Emit((ILOpcode)(ILOpcode.ldloc_0 + index));
@@ -104,8 +122,26 @@ namespace Internal.IL.Stubs
             }
         }
 
-        public void EmitStLoc(int index)
+        public void EmitLdLoca(ILLocalVariable variable)
         {
+            int index = (int)variable;
+
+            if (index < 0x100)
+            {
+                Emit(ILOpcode.ldloca_s);
+                EmitByte((byte)index);
+            }
+            else
+            {
+                Emit(ILOpcode.ldloca);
+                EmitUInt16((ushort)index);
+            }
+        }
+
+        public void EmitStLoc(ILLocalVariable variable)
+        {
+            int index = (int)variable;
+
             if (index < 4)
             {
                 Emit((ILOpcode)(ILOpcode.stloc_0 + index));
@@ -121,15 +157,85 @@ namespace Internal.IL.Stubs
                 EmitUInt16((ushort)index);
             }
         }
+
+        public void Emit(ILOpcode opcode, ILCodeLabel label)
+        {
+            Debug.Assert(opcode == ILOpcode.br || opcode == ILOpcode.brfalse ||
+                opcode == ILOpcode.brtrue || opcode == ILOpcode.beq ||
+                opcode == ILOpcode.bge || opcode == ILOpcode.bgt ||
+                opcode == ILOpcode.ble || opcode == ILOpcode.blt ||
+                opcode == ILOpcode.bne_un || opcode == ILOpcode.bge_un ||
+                opcode == ILOpcode.bgt_un || opcode == ILOpcode.ble_un ||
+                opcode == ILOpcode.blt_un || opcode == ILOpcode.leave);
+
+            Emit(opcode);
+            _offsetsNeedingPatching.Add(new LabelAndOffset(label, _length));
+            EmitUInt32(4);
+        }
+
+        public void EmitSwitch(ILCodeLabel[] labels)
+        {
+            Emit(ILOpcode.switch_);
+            EmitUInt32(labels.Length);
+
+            int remainingBytes = labels.Length * 4;
+            foreach (var label in labels)
+            {
+                _offsetsNeedingPatching.Add(new LabelAndOffset(label, _length));
+                EmitUInt32(remainingBytes);
+                remainingBytes -= 4;
+            }
+        }
+
+        public void EmitLabel(ILCodeLabel label)
+        {
+            label.Place(this, _length);
+        }
+
+        internal void PatchLabels()
+        {
+            for (int i = 0; i < _offsetsNeedingPatching.Count; i++)
+            {
+                LabelAndOffset patch = _offsetsNeedingPatching[i];
+
+                Debug.Assert(patch.Label.IsPlaced);
+                Debug.Assert(_startOffsetForLinking > -1);
+
+                int offset = patch.Offset;
+
+                int delta = _instructions[offset + 3] << 24 |
+                    _instructions[offset + 2] << 16 |
+                    _instructions[offset + 1] << 8 |
+                    _instructions[offset];
+
+                int value = patch.Label.AbsoluteOffset - _startOffsetForLinking - patch.Offset - delta;
+                
+                _instructions[offset] = (byte)value;
+                _instructions[offset + 1] = (byte)(value >> 8);
+                _instructions[offset + 2] = (byte)(value >> 16);
+                _instructions[offset + 3] = (byte)(value >> 24);
+            }
+        }
     }
 
-    class ILStubMethodIL : MethodIL
-    {
-        byte[] _ilBytes;
-        TypeDesc[] _locals;
-        Object[] _tokens;
+    /// <summary>
+    /// Represent a token. Use one of the overloads of <see cref="ILEmitter.NewToken"/>
+    /// to create a new token.
+    /// </summary>
+    public enum ILToken { }
 
-        public ILStubMethodIL(byte[] ilBytes, TypeDesc[] locals, Object[] tokens)
+    /// <summary>
+    /// Represents a local variable. Use <see cref="ILEmitter.NewLocal"/> to create a new local variable.
+    /// </summary>
+    public enum ILLocalVariable { }
+
+    internal class ILStubMethodIL : MethodIL
+    {
+        private byte[] _ilBytes;
+        private LocalVariableDefinition[] _locals;
+        private Object[] _tokens;
+
+        public ILStubMethodIL(byte[] ilBytes, LocalVariableDefinition[] locals, Object[] tokens)
         {
             _ilBytes = ilBytes;
             _locals = locals;
@@ -146,13 +252,13 @@ namespace Internal.IL.Stubs
         }
         public override ILExceptionRegion[] GetExceptionRegions()
         {
-            return new ILExceptionRegion[0]; // TODO: Array.Empty<ILExceptionRegion>()
+            return Array.Empty<ILExceptionRegion>();
         }
         public override bool GetInitLocals()
         {
             return true;
         }
-        public override TypeDesc[] GetLocals()
+        public override LocalVariableDefinition[] GetLocals()
         {
             return _locals;
         }
@@ -162,11 +268,46 @@ namespace Internal.IL.Stubs
         }
     }
 
+    public class ILCodeLabel
+    {
+        private ILCodeStream _codeStream;
+        private int _offsetWithinCodeStream;
+
+        internal bool IsPlaced
+        {
+            get
+            {
+                return _codeStream != null;
+            }
+        }
+
+        internal int AbsoluteOffset
+        {
+            get
+            {
+                Debug.Assert(IsPlaced);
+                Debug.Assert(_codeStream._startOffsetForLinking >= 0);
+                return _codeStream._startOffsetForLinking + _offsetWithinCodeStream;
+            }
+        }
+
+        internal ILCodeLabel()
+        {
+        }
+
+        internal void Place(ILCodeStream codeStream, int offsetWithinCodeStream)
+        {
+            Debug.Assert(!IsPlaced);
+            _codeStream = codeStream;
+            _offsetWithinCodeStream = offsetWithinCodeStream;
+        }
+    }
+
     public class ILEmitter
     {
-        ArrayBuilder<ILCodeStream> _codeStreams;
-        ArrayBuilder<TypeDesc> _locals;
-        ArrayBuilder<Object> _tokens;
+        private ArrayBuilder<ILCodeStream> _codeStreams;
+        private ArrayBuilder<LocalVariableDefinition> _locals;
+        private ArrayBuilder<Object> _tokens;
 
         public ILEmitter()
         {
@@ -179,55 +320,66 @@ namespace Internal.IL.Stubs
             return stream;
         }
 
-        private int NewToken(Object value, int tokenType)
+        private ILToken NewToken(Object value, int tokenType)
         {
             _tokens.Add(value);
-            return _tokens.Count | tokenType;
+            return (ILToken)(_tokens.Count | tokenType);
         }
 
-        public int NewToken(TypeDesc value)
+        public ILToken NewToken(TypeDesc value)
         {
             return NewToken(value, 0x01000000);
         }
 
-        public int NewToken(MethodDesc value)
+        public ILToken NewToken(MethodDesc value)
         {
             return NewToken(value, 0x0a000000);
         }
 
-        public int NewToken(FieldDesc value)
+        public ILToken NewToken(FieldDesc value)
         {
             return NewToken(value, 0x0a000000);
         }
 
-        public int NewToken(string value)
+        public ILToken NewToken(string value)
         {
             return NewToken(value, 0x70000000);
         }
 
-        public int NewToken(MethodSignature value)
+        public ILToken NewToken(MethodSignature value)
         {
             return NewToken(value, 0x11000000);
         }
 
-        public int NewLocal(TypeDesc localType)
+        public ILLocalVariable NewLocal(TypeDesc localType, bool isPinned = false)
         {
             int index = _locals.Count;
-            _locals.Add(localType);
-            return index;
+            _locals.Add(new LocalVariableDefinition(localType, isPinned));
+            return (ILLocalVariable)index;
+        }
+
+        public ILCodeLabel NewCodeLabel()
+        {
+            var newLabel = new ILCodeLabel();
+            return newLabel;
         }
 
         public MethodIL Link()
         {
             int totalLength = 0;
             for (int i = 0; i < _codeStreams.Count; i++)
-                totalLength += _codeStreams[i]._length;
+            {
+                ILCodeStream ilCodeStream = _codeStreams[i];
+                ilCodeStream._startOffsetForLinking = totalLength;
+                totalLength += ilCodeStream._length;
+            }
 
             byte[] ilInstructions = new byte[totalLength];
             int copiedLength = 0;
             for (int i = 0; i < _codeStreams.Count; i++)
             {
                 ILCodeStream ilCodeStream = _codeStreams[i];
+                ilCodeStream.PatchLabels();
                 Array.Copy(ilCodeStream._instructions, 0, ilInstructions, copiedLength, ilCodeStream._length);
                 copiedLength += ilCodeStream._length;
             }

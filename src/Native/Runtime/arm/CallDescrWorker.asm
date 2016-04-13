@@ -1,7 +1,6 @@
-;;
-;; Copyright (c) Microsoft. All rights reserved.
-;; Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-;;
+;; Licensed to the .NET Foundation under one or more agreements.
+;; The .NET Foundation licenses this file to you under the MIT license.
+;; See the LICENSE file in the project root for more information.
 
 #include "AsmMacros.h"
 
@@ -59,7 +58,7 @@ LNoFloatingPoint
         ;; Note that remoting expect target in r4.
         ldr     r4, [r5,#OFFSETOF__CallDescrData__pTarget]
         blx     r4
-        ALTERNATE_ENTRY ReturnFromCallDescrThunk
+    LABELED_RETURN_ADDRESS ReturnFromCallDescrThunk
 
         ldr     r3, [r5,#OFFSETOF__CallDescrData__fpReturnSize]
 

@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 #if defined(_DEBUG)
 #ifndef _DEBUG_IMPL
@@ -16,9 +15,16 @@
 #define _ASSERTE(_expr) ASSERT(_expr)
 #endif
 
+#include "gcenv.structs.h"
 #include "gcenv.base.h"
+#include "gcenv.ee.h"
+#include "gcenv.os.h"
+#include "gcenv.interlocked.h"
+#include "gcenv.interlocked.inl"
 #include "gcenv.object.h"
 #include "gcenv.sync.h"
+
+#define MAX_LONGPATH 1024
 
 //
 // Thread
@@ -139,3 +145,6 @@ public:
 };
 
 extern EEConfig * g_pConfig;
+
+#include "etmdummy.h"
+#define ETW_EVENT_ENABLED(e,f) false

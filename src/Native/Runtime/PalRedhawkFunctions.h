@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 extern "C" UInt16 __stdcall CaptureStackBackTrace(UInt32, UInt32, void*, UInt32*);
 inline UInt16 PalCaptureStackBackTrace(UInt32 arg1, UInt32 arg2, void* arg3, UInt32* arg4)
@@ -39,34 +38,28 @@ inline void PalEnterCriticalSection(CRITICAL_SECTION * arg1)
     EnterCriticalSection(arg1);
 }
 
+extern "C" UInt32 __stdcall EventRegister(const GUID *, void *, void *, REGHANDLE *);
+inline UInt32 PalEventRegister(const GUID * arg1, void * arg2, void * arg3, REGHANDLE * arg4)
+{
+    return EventRegister(arg1, arg2, arg3, arg4);
+}
+
+extern "C" UInt32 __stdcall EventUnregister(REGHANDLE);
+inline UInt32 PalEventUnregister(REGHANDLE arg1)
+{
+    return EventUnregister(arg1);
+}
+
+extern "C" UInt32 __stdcall EventWrite(REGHANDLE, const EVENT_DESCRIPTOR *, UInt32, EVENT_DATA_DESCRIPTOR *);
+inline UInt32 PalEventWrite(REGHANDLE arg1, const EVENT_DESCRIPTOR * arg2, UInt32 arg3, EVENT_DATA_DESCRIPTOR * arg4)
+{
+    return EventWrite(arg1, arg2, arg3, arg4);
+}
+
 extern "C" void __stdcall ExitProcess(UInt32);
 inline void PalExitProcess(UInt32 arg1)
 {
     ExitProcess(arg1);
-}
-
-extern "C" UInt32 __stdcall FlsAlloc(PFLS_CALLBACK_FUNCTION);
-inline UInt32 PalFlsAlloc(PFLS_CALLBACK_FUNCTION arg1)
-{
-    return FlsAlloc(arg1);
-}
-
-extern "C" void * __stdcall FlsGetValue(UInt32);
-inline void * PalFlsGetValue(UInt32 arg1)
-{
-    return FlsGetValue(arg1);
-}
-
-extern "C" UInt32_BOOL __stdcall FlsSetValue(UInt32, void *);
-inline UInt32_BOOL PalFlsSetValue(UInt32 arg1, void * arg2)
-{
-    return FlsSetValue(arg1, arg2);
-}
-
-extern "C" UInt32_BOOL __stdcall FlushFileBuffers(HANDLE);
-inline UInt32_BOOL PalFlushFileBuffers(HANDLE arg1)
-{
-    return FlushFileBuffers(arg1);
 }
 
 extern "C" void __stdcall FlushProcessWriteBuffers();
@@ -93,17 +86,19 @@ inline HANDLE PalGetCurrentThread()
     return GetCurrentThread();
 }
 
-extern "C" UInt32 __stdcall GetCurrentThreadId();
-inline UInt32 PalGetCurrentThreadId()
-{
-    return GetCurrentThreadId();
-}
-
-extern "C" UInt32 __stdcall GetEnvironmentVariableW(LPCWSTR, LPWSTR, UInt32);
-inline UInt32 PalGetEnvironmentVariableW(LPCWSTR arg1, LPWSTR arg2, UInt32 arg3)
+#ifdef UNICODE
+extern "C" UInt32 __stdcall GetEnvironmentVariableW(__in_z_opt LPCWSTR, __out_z_opt LPWSTR, UInt32);
+inline UInt32 PalGetEnvironmentVariable(__in_z_opt LPCWSTR arg1, __out_z_opt LPWSTR arg2, UInt32 arg3)
 {
     return GetEnvironmentVariableW(arg1, arg2, arg3);
 }
+#else
+extern "C" UInt32 __stdcall GetEnvironmentVariableA(__in_z_opt LPCSTR, __out_z_opt LPSTR, UInt32);
+inline UInt32 PalGetEnvironmentVariable(__in_z_opt LPCSTR arg1, __out_z_opt LPSTR arg2, UInt32 arg3)
+{
+    return GetEnvironmentVariableA(arg1, arg2, arg3);
+}
+#endif
 
 extern "C" UInt32 __stdcall GetLastError();
 inline UInt32 PalGetLastError()
@@ -200,12 +195,6 @@ extern "C" UInt32_BOOL __stdcall SetEvent(HANDLE);
 inline UInt32_BOOL PalSetEvent(HANDLE arg1)
 {
     return SetEvent(arg1);
-}
-
-extern "C" UInt32_BOOL __stdcall SetFilePointerEx(HANDLE, LARGE_INTEGER, LARGE_INTEGER *, UInt32);
-inline UInt32_BOOL PalSetFilePointerEx(HANDLE arg1, LARGE_INTEGER arg2, LARGE_INTEGER * arg3, UInt32 arg4)
-{
-    return SetFilePointerEx(arg1, arg2, arg3, arg4);
 }
 
 extern "C" void __stdcall TerminateProcess(HANDLE, UInt32);

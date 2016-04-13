@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 // -----------------------------------------------------------------------------------------------------------
 // Cut down versions of the Holder and Wrapper template classes used in the CLR. If this coding pattern is
@@ -11,6 +10,12 @@
 
 // -----------------------------------------------------------------------------------------------------------
 // This version of holder does not have a default constructor.
+
+#if defined(_MSC_VER) && (_MSC_VER < 1900)
+#define EQUALS_DEFAULT 
+#else
+#define EQUALS_DEFAULT = default
+#endif
 
 template <typename TYPE, void (*ACQUIRE_FUNC)(TYPE), void (*RELEASE_FUNC)(TYPE)>
 class HolderNoDefaultValue
@@ -28,7 +33,7 @@ public:
     void SuppressRelease() { m_held = false; }
     TYPE Extract() { m_held = false; return GetValue(); }
 
-    HolderNoDefaultValue(HolderNoDefaultValue && other) = default;
+    HolderNoDefaultValue(HolderNoDefaultValue && other) EQUALS_DEFAULT;
 
 protected:
     TYPE    m_value;
@@ -49,7 +54,7 @@ public:
     Holder() : MY_PARENT(DEFAULTVALUE, false) {}
     Holder(TYPE value, bool fTake = true) : MY_PARENT(value, fTake) {}
 
-    Holder(Holder && other) = default;
+    Holder(Holder && other) EQUALS_DEFAULT;
 
 private:
     // No one should be copying around holder types.
@@ -66,7 +71,7 @@ class Wrapper : public Holder<TYPE, ACQUIRE_FUNC, RELEASE_FUNC, DEFAULTVALUE>
 public:
     Wrapper() : MY_PARENT() {}
     Wrapper(TYPE value, bool fTake = true) : MY_PARENT(value, fTake) {}
-    Wrapper(Wrapper && other) = default;
+    Wrapper(Wrapper && other) EQUALS_DEFAULT;
 
     FORCEINLINE TYPE& operator=(TYPE const & value)
     {
@@ -88,7 +93,7 @@ private:
 
 // -----------------------------------------------------------------------------------------------------------
 template <typename TYPE>
-FORCEINLINE void DoNothing(TYPE value)
+FORCEINLINE void DoNothing(TYPE /*value*/)
 {
 }
 

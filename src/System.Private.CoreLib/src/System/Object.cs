@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*============================================================
 **
@@ -11,6 +12,7 @@
 ** 
 ===========================================================*/
 
+using System.Diagnostics;
 using System.Runtime;
 using System.Runtime.CompilerServices;
 using System.Runtime.Versioning;
@@ -54,6 +56,28 @@ namespace System
         {
         }
 
+#if INPLACE_RUNTIME
+        internal unsafe EEType* EEType
+        {
+            get
+            {
+                return (EEType *)m_pEEType;
+            }
+        }
+
+        internal unsafe int GetArrayLength()
+        {
+            Debug.Assert(EEType->IsArray, "this is only supported on arrays");
+
+            // m_numComponents is an int field that is directly after _pEEType
+            fixed (IntPtr * ptr = &m_pEEType)
+                return *(int*)(ptr + 1);
+        }
+#endif
+
+#if CORERT
+        [Intrinsic]
+#endif
         public Type GetType()
         {
             return ReflectionCoreNonPortable.GetRuntimeTypeForEEType(EETypePtr);

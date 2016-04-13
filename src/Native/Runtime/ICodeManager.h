@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 #pragma once
 
 // TODO: Debugger/DAC support (look for TODO: JIT)
@@ -39,8 +38,8 @@ enum GCRefKind : unsigned char
 //
 class MethodInfo
 {
-    TADDR dummyPtrs[6];
-    Int32 dummyInts[6];
+    TADDR dummyPtrs[5];
+    Int32 dummyInts[8];
 };
 
 class EHEnumState
@@ -53,12 +52,6 @@ enum EHClauseKind
 {
     EH_CLAUSE_TYPED = 0,
     EH_CLAUSE_FAULT = 1,
-
-    // Local Exceptions
-    EH_CLAUSE_METHOD_BOUNDARY = 2,
-    EH_CLAUSE_FAIL_FAST = 3,
-
-    // CLR Exceptions
     EH_CLAUSE_FILTER = 2,
     EH_CLAUSE_UNUSED = 3,
 };
@@ -71,6 +64,17 @@ struct EHClause
     UInt32 m_filterOffset;
     UInt32 m_handlerOffset;
     void* m_pTargetType;
+};
+
+// Constants used with RhpGetClasslibFunction, to indicate which classlib function
+// we are interested in. 
+// Note: make sure you change the def in System\Runtime\exceptionhandling.cs if you change this!
+enum class ClasslibFunctionId
+{
+    GetRuntimeException = 0,
+    FailFast = 1,
+    UnhandledExceptionHandler = 2,
+    AppendExceptionStackFrame = 3,
 };
 
 class ICodeManager
@@ -95,6 +99,9 @@ public:
                                   REGDISPLAY *    pRegisterSet,                     // in/out
                                   PTR_VOID *      ppPreviousTransitionFrame) = 0;   // out
 
+    virtual UIntNative GetConservativeUpperBoundForOutgoingArgs(MethodInfo *   pMethodInfo,
+                                                                REGDISPLAY *   pRegisterSet) = 0;
+
     virtual bool GetReturnAddressHijackInfo(MethodInfo *    pMethodInfo,
                                             UInt32          codeOffset,
                                             REGDISPLAY *    pRegisterSet,           // in
@@ -108,4 +115,6 @@ public:
     virtual bool EHEnumInit(MethodInfo * pMethodInfo, PTR_VOID * pMethodStartAddress, EHEnumState * pEHEnumState) = 0;
 
     virtual bool EHEnumNext(EHEnumState * pEHEnumState, EHClause * pEHClause) = 0;
+
+    virtual void * GetClasslibFunction(ClasslibFunctionId functionId) = 0;
 };

@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using Debug = System.Diagnostics.Debug;
@@ -13,6 +14,7 @@ namespace Internal.TypeSystem
     {
         Unknown,
         ARM,
+        ARM64,
         X64,
         X86,
     }
@@ -27,6 +29,7 @@ namespace Internal.TypeSystem
         Linux,
         OSX,
         FreeBSD,
+        NetBSD,
     }
 
     /// <summary>
@@ -60,6 +63,7 @@ namespace Internal.TypeSystem
             {
                 switch (Architecture)
                 {
+                    case TargetArchitecture.ARM64:
                     case TargetArchitecture.X64:
                         return 8;
                     case TargetArchitecture.ARM:
@@ -104,7 +108,7 @@ namespace Internal.TypeSystem
         /// <summary>
         /// Retrieves the size of a well known type.
         /// </summary>
-        public int GetWellKnownTypeSize(MetadataType type)
+        public int GetWellKnownTypeSize(DefType type)
         {
             switch (type.Category)
             {
@@ -134,7 +138,7 @@ namespace Internal.TypeSystem
                 case TypeFlags.IntPtr:
                     return PointerSize;
             }
-            
+
             // Add new well known types if necessary
 
             throw new InvalidOperationException();
@@ -143,7 +147,7 @@ namespace Internal.TypeSystem
         /// <summary>
         /// Retrieves the alignment required by a well known type.
         /// </summary>
-        public int GetWellKnownTypeAlignment(MetadataType type)
+        public int GetWellKnownTypeAlignment(DefType type)
         {
             // Size == Alignment for all platforms.
             return GetWellKnownTypeSize(type);
@@ -170,7 +174,17 @@ namespace Internal.TypeSystem
                 default:
                     throw new NotImplementedException();
             }
+        }
 
+        /// <summary>
+        /// Returns True if compiling for Windows
+        /// </summary>
+        public bool IsWindows
+        {
+            get
+            {
+                return OperatingSystem == TargetOS.Windows;
+            }
         }
     }
 }

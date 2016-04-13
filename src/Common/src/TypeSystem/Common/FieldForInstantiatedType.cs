@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 
@@ -7,8 +8,8 @@ namespace Internal.TypeSystem
 {
     public sealed class FieldForInstantiatedType : FieldDesc
     {
-        FieldDesc _fieldDef;
-        InstantiatedType _instantiatedType;
+        private FieldDesc _fieldDef;
+        private InstantiatedType _instantiatedType;
 
         internal FieldForInstantiatedType(FieldDesc fieldDef, InstantiatedType instantiatedType)
         {
@@ -24,7 +25,7 @@ namespace Internal.TypeSystem
             }
         }
 
-        public override MetadataType OwningType
+        public override DefType OwningType
         {
             get
             {
@@ -77,6 +78,14 @@ namespace Internal.TypeSystem
             get
             {
                 return _fieldDef.HasRva;
+            }
+        }
+
+        public override bool IsLiteral
+        {
+            get
+            {
+                return _fieldDef.IsLiteral;
             }
         }
 

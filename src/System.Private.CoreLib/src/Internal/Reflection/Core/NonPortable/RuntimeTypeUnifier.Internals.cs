@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Runtime;
@@ -34,7 +35,7 @@ namespace Internal.Reflection.Core.NonPortable
                 // Desktop compat: Allows Type.GetTypeFromHandle(default(RuntimeTypeHandle)) to map to null.
                 if (runtimeTypeHandle.RawValue == (IntPtr)0)
                     return null;
-                EETypePtr eeType = runtimeTypeHandle.EEType;
+                EETypePtr eeType = runtimeTypeHandle.ToEETypePtr();
                 return TypeTableForTypesWithEETypes.Table.GetOrAdd(eeType);
             }
 
@@ -83,11 +84,11 @@ namespace Internal.Reflection.Core.NonPortable
                             return new RuntimeEENamedNonGenericType(eeType);
                         }
 
-                        if (RuntimeImports.AreTypesAssignable(eeType, typeof(MDArrayRank2).TypeHandle.EEType))
+                        if (RuntimeImports.AreTypesAssignable(eeType, typeof(MDArrayRank2).TypeHandle.ToEETypePtr()))
                             return new RuntimeEEArrayType(eeType, rank: 2);
-                        if (RuntimeImports.AreTypesAssignable(eeType, typeof(MDArrayRank3).TypeHandle.EEType))
+                        if (RuntimeImports.AreTypesAssignable(eeType, typeof(MDArrayRank3).TypeHandle.ToEETypePtr()))
                             return new RuntimeEEArrayType(eeType, rank: 3);
-                        if (RuntimeImports.AreTypesAssignable(eeType, typeof(MDArrayRank4).TypeHandle.EEType))
+                        if (RuntimeImports.AreTypesAssignable(eeType, typeof(MDArrayRank4).TypeHandle.ToEETypePtr()))
                             return new RuntimeEEArrayType(eeType, rank: 4);
                         return new RuntimeEEConstructedGenericType(eeType);
                     default:
@@ -257,6 +258,9 @@ namespace Internal.Reflection.Core.NonPortable
 
                 RuntimeTypeHandle genericTypeDefinitionHandle = default(RuntimeTypeHandle);
                 if (!key.GenericTypeDefinition.InternalTryGetTypeHandle(out genericTypeDefinitionHandle))
+                    return false;
+
+                if (RuntimeAugments.Callbacks.IsReflectionBlocked(genericTypeDefinitionHandle))
                     return false;
 
                 RuntimeType[] genericTypeArguments = key.GenericTypeArguments;

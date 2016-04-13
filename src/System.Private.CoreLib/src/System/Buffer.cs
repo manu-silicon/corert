@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Runtime;
@@ -17,13 +18,6 @@ namespace System
 {
     public static class Buffer
     {
-#if CORERT
-        // CORERT-TODO This depends on a lot of stuff that we do not handle yet
-        [RuntimeImport("Buffer_BlockCopy")]
-        public static unsafe extern void BlockCopy(Array src, int srcOffset,
-                                            Array dst, int dstOffset,
-                                            int count);
-#else
         public static unsafe void BlockCopy(Array src, int srcOffset,
                                             Array dst, int dstOffset,
                                             int count)
@@ -74,7 +68,6 @@ namespace System
                 Buffer.Memmove(pDst, pSrc, uCount);
             }
         }
-#endif
 
         // This is ported from the optimized CRT assembly in memchr.asm. The JIT generates 
         // pretty good code here and this ends up being within a couple % of the CRT asm.
@@ -218,7 +211,6 @@ namespace System
 
         // The attributes on this method are chosen for best JIT performance. 
         // Please do not edit unless intentional.
-        [System.Security.SecurityCritical]
         [MethodImplAttribute(MethodImplOptions.AggressiveInlining)]
         [CLSCompliant(false)]
         public static unsafe void MemoryCopy(void* source, void* destination, long destinationSizeInBytes, long sourceBytesToCopy)
@@ -233,7 +225,6 @@ namespace System
 
         // The attributes on this method are chosen for best JIT performance. 
         // Please do not edit unless intentional.
-        [System.Security.SecurityCritical]
         [MethodImplAttribute(MethodImplOptions.AggressiveInlining)]
         [CLSCompliant(false)]
         public static unsafe void MemoryCopy(void* source, void* destination, ulong destinationSizeInBytes, ulong sourceBytesToCopy)
@@ -246,7 +237,6 @@ namespace System
             Memmove((byte*)destination, (byte*)source, checked((nuint)sourceBytesToCopy));
         }
 
-        [System.Security.SecurityCritical]
         internal unsafe static void Memmove(byte* dest, byte* src, nuint len)
         {
             // P/Invoke into the native version when the buffers are overlapping and the copy needs to be performed backwards
@@ -257,12 +247,13 @@ namespace System
                 return;
             }
 
-            // TODO-CORERT: re-enable this once we can handle the relocs for JIT code for large switch blocks
-#if !CORERT
             //
             // This is portable version of memcpy. It mirrors what the hand optimized assembly versions of memcpy typically do.
             //
 
+#if ALIGN_ACCESS
+#error Needs porting for ALIGN_ACCESS (https://github.com/dotnet/corert/issues/430)
+#else // ALIGN_ACCESS
             switch (len)
             {
                 case 0:
@@ -385,14 +376,11 @@ namespace System
             }
 
             // P/Invoke into the native version for large lengths.
-            // On desktop, we only PInvoke for lengths >= 512. Since the overhead of a PInvoke is cheaper here,
-            // we are able to PInvoke for smaller copy workloads (length >= 50) and still get a benefit.
-            if (len >= 50)
+            if (len >= 200)
             {
                 _Memmove(dest, src, len);
                 return;
             }
-#endif
 
             if (((int)dest & 3) != 0)
             {
@@ -464,11 +452,11 @@ namespace System
             }
             if ((len & 1) != 0)
                 *dest = *src;
+#endif // ALIGN_ACCESS
         }
 
         // Non-inlinable wrapper around the QCall that avoids poluting the fast path
         // with P/Invoke prolog/epilog.
-        [System.Security.SecurityCritical]
         [MethodImplAttribute(MethodImplOptions.NoInlining)]
         private unsafe static void _Memmove(byte* dest, byte* src, nuint len)
         {

@@ -1,7 +1,6 @@
-;;
-;; Copyright (c) Microsoft. All rights reserved.
-;; Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-;;
+;; Licensed to the .NET Foundation under one or more agreements.
+;; The .NET Foundation licenses this file to you under the MIT license.
+;; See the LICENSE file in the project root for more information.
 
         .586
         .model  flat
@@ -49,7 +48,7 @@ donestack:
         mov     ecx, dword ptr [eax + 4]
         mov     eax,[ebx + OFFSETOF__CallDescrData__pTarget]
         call    eax
-ALTERNATE_ENTRY ReturnFromCallDescrThunk ; Symbol used to identify thunk call to managed function so the special case unwinder can unwind through this function
+LABELED_RETURN_ADDRESS ReturnFromCallDescrThunk ; Symbol used to identify thunk call to managed function so the special case unwinder can unwind through this function
 
         ; Save FP return value if necessary
         mov     ecx, [ebx + OFFSETOF__CallDescrData__fpReturnSize]

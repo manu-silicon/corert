@@ -1,10 +1,10 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 #include "ICodeManager.h"
 
 #include "SectionMethodList.h"
+#include "ModuleManager.h"
 
 struct StaticGcDesc;
 typedef SPTR(StaticGcDesc) PTR_StaticGcDesc;
@@ -14,20 +14,9 @@ class DispatchMap;
 struct BlobHeader;
 struct GenericInstanceDesc;
 typedef SPTR(struct GenericInstanceDesc) PTR_GenericInstanceDesc;
-struct SimpleModuleHeader;
 
-class Module
-#ifndef DACCESS_COMPILE
-    // TODO: JIT support in DAC
-    : public ICodeManager
-#endif
+class Module : public ICodeManager
 {
-#ifdef DACCESS_COMPILE
-    // The DAC does not support registration of dynamic code managers yet, but we need a space for the vtable used at runtime.
-    // TODO: JIT support in DAC
-    TADDR m_vptr;
-#endif
-
     friend class AsmOffsets;
     friend struct DefaultSListTraits<Module>;
     friend class RuntimeInstance;
@@ -35,7 +24,6 @@ public:
     virtual ~Module();
 
     static Module *     Create(ModuleHeader *pModuleHeader);
-    static Module *     Create(SimpleModuleHeader *pModuleHeader);
 
     void                Destroy();
 
@@ -47,17 +35,6 @@ public:
     static void EnumStaticGCRefsBlock(void * pfnCallback, void * pvCallbackData, PTR_StaticGcDesc pStaticGcInfo, PTR_UInt8 pbStaticData);
     void EnumStaticGCRefs(void * pfnCallback, void * pvCallbackData);
 
-#ifdef FEATURE_VSD
-
-    //
-    // VSD support
-    //
-    IndirectionCell *           GetIndirectionCellArray();
-    UInt32                      GetIndirectionCellArrayCount();
-    VSDInterfaceTargetInfo *    GetInterfaceTargetInfoArray();
-
-#endif // FEATURE_VSD
-
     // Get the classlib module that this module was compiled against.
     Module * GetClasslibModule();
 
@@ -65,10 +42,7 @@ public:
     bool IsClasslibModule();
 
     // Get classlib-defined helpers for the exception system.
-    void * GetClasslibRuntimeExceptionHelper();
-    void * GetClasslibFailFastHelper();
-    void * GetClasslibUnhandledExceptionHandlerHelper();
-    void * GetClasslibAppendExceptionStackFrameHelper();
+    void * GetClasslibFunction(ClasslibFunctionId functionId);
 
     // Get classlib-defined helper for running deferred static class constructors.
     void * GetClasslibCheckStaticClassConstruction();
@@ -85,16 +59,7 @@ public:
     // Returns true if this module is part of the OS module specified by hOsHandle.
     bool IsContainedBy(HANDLE hOsHandle);
 
-    // NULL out any GC references held by statics in this module. Note that this is unsafe unless we know that
-    // no code is making (or can make) any reference to these statics. Generally this is only true when we are
-    // about to unload the module.
-    void ClearStaticRoots();
-
     void UnregisterFrozenSection();
-
-    // Remove from the system any generic instantiations published by this module and not required by any
-    // other module currently loaded.
-    void UnregisterGenericInstances();
 
     PTR_UInt8 FindMethodStartAddress(PTR_VOID ControlPC);
 
@@ -117,6 +82,9 @@ public:
                           REGDISPLAY *    pRegisterSet,
                           PTR_VOID *      ppPreviousTransitionFrame);
 
+    UIntNative GetConservativeUpperBoundForOutgoingArgs(MethodInfo *   pMethodInfo,
+                                                        REGDISPLAY *   pRegisterSet);
+
     bool GetReturnAddressHijackInfo(MethodInfo *     pMethodInfo,
                                     UInt32           codeOffset,
                                     REGDISPLAY *     pRegisterSet,
@@ -129,8 +97,6 @@ public:
     void UnsynchronizedHijackMethodLoops(MethodInfo * pMethodInfo);
     void UnsynchronizedResetHijackedLoops();
     void UnsynchronizedHijackAllLoops();
-
-    bool EHEnumInitFromReturnAddress(PTR_VOID ControlPC, PTR_VOID * pMethodStartAddressOut, EHEnumState * pEHEnumStateOut);
 
     bool EHEnumInit(MethodInfo * pMethodInfo, PTR_VOID * pMethodStartAddressOut, EHEnumState * pEHEnumStateOut);
     bool EHEnumNext(EHEnumState * pEHEnumState, EHClause * pEHClauseOut);
@@ -176,13 +142,15 @@ public:
     bool IsFinalizerInitComplete() { return m_fFinalizerInitComplete; }
     void SetFinalizerInitComplete() { m_fFinalizerInitComplete = true; }
 
+    void * RecoverLoopHijackTarget(UInt32 entryIndex, ModuleHeader * pModuleHeader);
+
 private:
     Module(ModuleHeader * pModuleHeader);
-    bool RegisterGenericInstances();
 #ifdef FEATURE_CUSTOM_IMPORTS
     static void DoCustomImports(ModuleHeader * pModuleHeader);
     PTR_UInt8 GetBaseAddress() { return (PTR_UInt8)(size_t)GetOsModuleHandle(); }
 #endif // FEATURE_CUSTOM_IMPORTS
+
 
     static void UnsynchronizedHijackLoop(void ** ppvIndirectionCell, UInt32 cellIndex, 
                                          void * pvRedirStubsStart, UInt8 * pbDirtyBitmap);
@@ -192,7 +160,6 @@ private:
     PTR_UInt8                   m_pbDeltaShortcutTable;   // 16-byte array of the most popular deltas
 
     PTR_ModuleHeader            m_pModuleHeader;
-    SimpleModuleHeader *        m_pSimpleModuleHeader;
     void *                      m_pEHTypeTable;
     SectionMethodList           m_MethodList;
     GcSegmentHandle             m_FrozenSegment;
@@ -202,5 +169,7 @@ private:
     PTR_StaticGcDesc            m_pStaticsGCInfo;
     PTR_StaticGcDesc            m_pThreadStaticsGCInfo;
     PTR_UInt8                   m_pStaticsGCDataSection;
-};
 
+    ReaderWriterLock            m_loopHijackMapLock;
+    MapSHash<UInt32, void*>     m_loopHijackIndexToTargetMap;
+};

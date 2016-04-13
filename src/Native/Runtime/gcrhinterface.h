@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //
 // This header contains the definition of an interface between the GC/HandleTable portions of the Redhawk
@@ -20,7 +19,6 @@
 
 #ifndef DACCESS_COMPILE
 // Global data cells exported by the GC.
-extern "C" unsigned int *g_card_table;
 extern "C" unsigned char *g_ephemeral_low;
 extern "C" unsigned char *g_ephemeral_high;
 extern "C" unsigned char *g_lowest_address;

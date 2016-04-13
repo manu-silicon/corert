@@ -1,18 +1,14 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
-#ifndef DACCESS_COMPILE
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+#include "common.h"
 #include "CommonTypes.h"
-#include "daccess.h"
 #include "CommonMacros.h"
-#include "assert.h"
+#include "daccess.h"
+#include "rhassert.h"
 #include "rhbinder.h"
 #include "eetype.h"
 #include "GenericInstance.h"
-#else
-#include "gcrhenv.h"
-#endif
 
 bool UnifiedGenericInstance::Equals(GenericInstanceDesc * pLocalGid)
 {

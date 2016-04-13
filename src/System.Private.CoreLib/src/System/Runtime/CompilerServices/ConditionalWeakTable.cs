@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -17,7 +18,6 @@ namespace System.Runtime.CompilerServices
         where TValue : class
     {
         #region Constructors
-        [System.Security.SecuritySafeCritical]
         public ConditionalWeakTable()
         {
             _container = new Container().Resize();
@@ -36,7 +36,6 @@ namespace System.Runtime.CompilerServices
         // Note: The key may get garbaged collected during the TryGetValue operation. If so, TryGetValue
         // may at its discretion, return "false" and set "value" to the default (as if the key was not present.)
         //--------------------------------------------------------------------------------------------
-        [System.Security.SecuritySafeCritical]
         public bool TryGetValue(TKey key, out TValue value)
         {
             if (key == null)
@@ -57,7 +56,6 @@ namespace System.Runtime.CompilerServices
         // has the right to consider any prior entries successfully removed and add a new entry without
         // throwing an exception.
         //--------------------------------------------------------------------------------------------
-        [System.Security.SecuritySafeCritical]
         public void Add(TKey key, TValue value)
         {
             if (key == null)
@@ -71,7 +69,7 @@ namespace System.Runtime.CompilerServices
                 int entryIndex = _container.FindEntry(key, out otherValue);
                 if (entryIndex != -1)
                 {
-                    throw new ArgumentException(SR.Argument_AddingDuplicate);
+                    throw new ArgumentException(SR.Format(SR.Argument_AddingDuplicate, key));
                 }
 
                 CreateEntry(key, value);
@@ -87,7 +85,6 @@ namespace System.Runtime.CompilerServices
         // Remove() will not fail or throw, however, the return value can be either true or false
         // depending on who wins the race.
         //--------------------------------------------------------------------------------------------
-        [System.Security.SecuritySafeCritical]
         public bool Remove(TKey key)
         {
             if (key == null)
@@ -117,7 +114,6 @@ namespace System.Runtime.CompilerServices
         // This rule permits the table to invoke createValueCallback outside the internal table lock
         // to prevent deadlocks.
         //--------------------------------------------------------------------------------------------
-        [System.Security.SecuritySafeCritical]
         public TValue GetValue(TKey key, CreateValueCallback createValueCallback)
         {
             // Our call to TryGetValue() validates key so no need for us to.
@@ -143,7 +139,7 @@ namespace System.Runtime.CompilerServices
 
         private TValue GetValueLocked(TKey key, CreateValueCallback createValueCallback)
         {
-            // If we got here, the key is not currently in table. Invoke the callback (outside the lock)
+            // If we got here, the key was not in the table. Invoke the callback (outside the lock)
             // to generate the new value for the key. 
             TValue newValue = createValueCallback(key);
 
@@ -191,7 +187,6 @@ namespace System.Runtime.CompilerServices
         // if you know for sure that either you won't run into dead locks or you need to live with the
         // possiblity
         //--------------------------------------------------------------------------------------------
-        [System.Security.SecuritySafeCritical]
         internal TKey FindEquivalentKeyUnsafe(TKey key, out TValue value)
         {
             lock (_lock)
@@ -205,7 +200,6 @@ namespace System.Runtime.CompilerServices
         //--------------------------------------------------------------------------------------------
         internal ICollection<TKey> Keys
         {
-            [System.Security.SecuritySafeCritical]
             get
             {
                 lock (_lock)
@@ -220,7 +214,6 @@ namespace System.Runtime.CompilerServices
         //--------------------------------------------------------------------------------------------
         internal ICollection<TValue> Values
         {
-            [System.Security.SecuritySafeCritical]
             get
             {
                 lock (_lock)
@@ -233,7 +226,6 @@ namespace System.Runtime.CompilerServices
         //--------------------------------------------------------------------------------------------
         // Clear all the key/value pairs
         //--------------------------------------------------------------------------------------------
-        [System.Security.SecuritySafeCritical]
         internal void Clear()
         {
             lock (_lock)
@@ -254,7 +246,6 @@ namespace System.Runtime.CompilerServices
         //     Must hold _lock.
         //     Key already validated as non-null and not already in table.
         //----------------------------------------------------------------------------------------
-        [System.Security.SecurityCritical]
         private void CreateEntry(TKey key, TValue value)
         {
             Contract.Assert(_lock.IsAcquired);
@@ -269,12 +260,12 @@ namespace System.Runtime.CompilerServices
 
         #region Private Data Members
         //--------------------------------------------------------------------------------------------
-        // Entry can be in one of three states:
+        // Entry can be in one of four states:
         //
-        //    - Linked into the freeList (_freeList points to first entry)
+        //    - Unused (stored with an index _firstFreeEntry and above)
         //         depHnd.IsAllocated == false
         //         hashCode == <dontcare>
-        //         next links to next Entry on freelist)
+        //         next == <dontcare>)
         //
         //    - Used with live key (linked into a bucket list where _buckets[hashCode % _buckets.Length] points to first entry)
         //         depHnd.IsAllocated == true, depHnd.GetPrimary() != null
@@ -296,8 +287,8 @@ namespace System.Runtime.CompilerServices
         // happens asynchronously as a result of normal garbage collection. The dictionary itself
         // receives no notification when this happens.
         //
-        // When the dictionary grows the _entries table, it scours it for expired keys and puts those
-        // entries back on the freelist.
+        // When the dictionary grows the _entries table, it scours it for expired keys and does not
+        // add those to the new container.
         //--------------------------------------------------------------------------------------------
         private struct Entry
         {
@@ -318,18 +309,17 @@ namespace System.Runtime.CompilerServices
             {
                 _buckets = new int[0];
                 _entries = new Entry[0];
-                _freeList = -1;
+                _firstFreeEntry = 0;
             }
 
             internal bool HasCapacity
             {
                 get
                 {
-                    return _freeList != -1;
+                    return _firstFreeEntry < _entries.Length;
                 }
             }
 
-            [System.Security.SecurityCritical]
             //----------------------------------------------------------------------------------------
             // Worker for adding a new key/value pair.
             // Preconditions:
@@ -345,9 +335,8 @@ namespace System.Runtime.CompilerServices
                 int hashCode = RuntimeHelpers.GetHashCode(key) & Int32.MaxValue;
                 int bucket = hashCode % _buckets.Length;
 
-                int newEntry = _freeList;
-                _freeList = _entries[newEntry].next;
-
+                int newEntry = _firstFreeEntry++;
+                
                 _entries[newEntry].hashCode = hashCode;
                 _entries[newEntry].depHnd = new DependentHandle(key, value);
                 _entries[newEntry].next = _buckets[bucket];
@@ -359,7 +348,6 @@ namespace System.Runtime.CompilerServices
                 _invalid = false;
             }
 
-            [System.Security.SecurityCritical]
             //----------------------------------------------------------------------------------------
             // Worker for finding a key/value pair
             //
@@ -388,7 +376,6 @@ namespace System.Runtime.CompilerServices
             //     Must hold _lock, or be prepared to retry the search while holding _lock.
             //     Key already validated as non-null.
             //----------------------------------------------------------------------------------------
-            [System.Security.SecurityCritical]
             internal int FindEntry(TKey key, out object value)
             {
                 int hashCode = RuntimeHelpers.GetHashCode(key) & Int32.MaxValue;
@@ -432,9 +419,8 @@ namespace System.Runtime.CompilerServices
             //      Must hold _lock.
             //
             // Postcondition:
-            //      _freeList is non-empty on exit.
+            //      _firstEntry is less than _entries.Length on exit, that is, the table has at least one free entry.
             //----------------------------------------------------------------------------------------
-            [System.Security.SecurityCritical]
             internal Container Resize()
             {
                 // Start by assuming we won't resize.
@@ -466,15 +452,15 @@ namespace System.Runtime.CompilerServices
                 }
 
 
-                // Reallocate both buckets and entries and rebuild the bucket and freelists from scratch.
+                // Reallocate both buckets and entries and rebuild the bucket and entries from scratch.
                 // This serves both to scrub entries with expired keys and to put the new entries in the proper bucket.
-                int newFreeList = -1;
                 int[] newBuckets = new int[newSize];
                 for (int bucketIndex = 0; bucketIndex < newSize; bucketIndex++)
                 {
                     newBuckets[bucketIndex] = -1;
                 }
                 Entry[] newEntries = new Entry[newSize];
+                int newEntriesIndex = 0;
 
                 // Migrate existing entries to the new table.
                 for (entriesIndex = 0; entriesIndex < _entries.Length; entriesIndex++)
@@ -486,31 +472,14 @@ namespace System.Runtime.CompilerServices
                         // Note that we have to copy the DependentHandle, since the original copy will be freed
                         // by the Container's finalizer.  
                         int bucket = _entries[entriesIndex].hashCode % newSize;
-                        newEntries[entriesIndex].depHnd = depHnd.AllocateCopy();
-                        newEntries[entriesIndex].hashCode = _entries[entriesIndex].hashCode;
-                        newEntries[entriesIndex].next = newBuckets[bucket];
-                        newBuckets[bucket] = entriesIndex;
-                    }
-                    else
-                    {
-                        // Entry has either expired or was on the freelist to begin with. Either way
-                        // insert it on the new freelist.
-                        // We do not free the underlying GC handle here, as we may be racing with readers who already saw
-                        // the old Container.  The GC handle will be free'd in Container's finalizer.
-                        newEntries[entriesIndex].depHnd = new DependentHandle();
-                        newEntries[entriesIndex].next = newFreeList;
-                        newFreeList = entriesIndex;
+                        newEntries[newEntriesIndex].depHnd = depHnd.AllocateCopy();
+                        newEntries[newEntriesIndex].hashCode = _entries[entriesIndex].hashCode;
+                        newEntries[newEntriesIndex].next = newBuckets[bucket];
+                        newBuckets[bucket] = newEntriesIndex;
+                        newEntriesIndex++;
                     }
                 }
 
-                // Add remaining entries to freelist.
-                while (entriesIndex != newEntries.Length)
-                {
-                    newEntries[entriesIndex].depHnd = new DependentHandle();
-                    newEntries[entriesIndex].next = newFreeList;
-                    newFreeList = entriesIndex;
-                    entriesIndex++;
-                }
 
                 GC.KeepAlive(this); // ensure we don't get finalized while accessing DependentHandles.
 
@@ -518,13 +487,12 @@ namespace System.Runtime.CompilerServices
                 {
                     _buckets = newBuckets,
                     _entries = newEntries,
-                    _freeList = newFreeList
+                    _firstFreeEntry = newEntriesIndex
                 };
             }
 
             internal ICollection<TKey> Keys
             {
-                [System.Security.SecuritySafeCritical]
                 get
                 {
                     LowLevelListWithIList<TKey> list = new LowLevelListWithIList<TKey>();
@@ -548,7 +516,6 @@ namespace System.Runtime.CompilerServices
 
             internal ICollection<TValue> Values
             {
-                [System.Security.SecuritySafeCritical]
                 get
                 {
                     LowLevelListWithIList<TValue> list = new LowLevelListWithIList<TValue>();
@@ -577,7 +544,6 @@ namespace System.Runtime.CompilerServices
                 }
             }
 
-            [System.Security.SecuritySafeCritical]
             internal TKey FindEquivalentKeyUnsafe(TKey key, out TValue value)
             {
                 for (int bucket = 0; bucket < _buckets.Length; ++bucket)
@@ -617,7 +583,6 @@ namespace System.Runtime.CompilerServices
             //----------------------------------------------------------------------------------------
             // Finalizer.
             //----------------------------------------------------------------------------------------
-            [System.Security.SecuritySafeCritical]
             ~Container()
             {
                 // We're just freeing per-appdomain unmanaged handles here. If we're already shutting down the AD,
@@ -653,8 +618,8 @@ namespace System.Runtime.CompilerServices
 
             private int[] _buckets;             // _buckets[hashcode & _buckets.Length] contains index of first entry in bucket (-1 if empty)
             private Entry[] _entries;
-            private int _freeList;            // -1 = empty, else index of first unused Entry
-            private bool _invalid;             // flag detects if OOM or other background exception threw us out of the lock.
+            private int _firstFreeEntry;        // _firstFreeEntry < _entries.Length => table has capacity,  entries grow from the bottom of the table.
+            private bool _invalid;              // flag detects if OOM or other background exception threw us out of the lock.
         }
 
         private volatile Container _container;
@@ -698,9 +663,7 @@ namespace System.Runtime.CompilerServices
     {
         #region Constructors
 #if FEATURE_CORECLR
-        [System.Security.SecuritySafeCritical] // auto-generated
 #else
-        [System.Security.SecurityCritical]
 #endif
         public DependentHandle(Object primary, Object secondary)
         {
@@ -721,9 +684,7 @@ namespace System.Runtime.CompilerServices
         // we provide a separate primary-only accessor for those times we only want the
         // primary.
 #if FEATURE_CORECLR
-        [System.Security.SecuritySafeCritical] // auto-generated
 #else
-        [System.Security.SecurityCritical]
 #endif
         public Object GetPrimary()
         {
@@ -731,9 +692,7 @@ namespace System.Runtime.CompilerServices
         }
 
 #if FEATURE_CORECLR
-        [System.Security.SecuritySafeCritical] // auto-generated
 #else
-        [System.Security.SecurityCritical]
 #endif
         public object GetPrimaryAndSecondary(out Object secondary)
         {
@@ -744,7 +703,6 @@ namespace System.Runtime.CompilerServices
         // Forces dependentHandle back to non-allocated state (if not already there)
         // and frees the handle if needed.
         //----------------------------------------------------------------------
-        [System.Security.SecurityCritical]
         public void Free()
         {
             if (_handle != (IntPtr)0)
@@ -755,7 +713,6 @@ namespace System.Runtime.CompilerServices
             }
         }
 
-        [System.Security.SecurityCritical]
         internal DependentHandle AllocateCopy()
         {
             object primary, secondary;

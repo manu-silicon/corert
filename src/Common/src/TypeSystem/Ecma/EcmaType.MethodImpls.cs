@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
@@ -63,9 +64,9 @@ namespace Internal.TypeSystem.Ecma
 
                 if (foundRecord)
                 {
-                    MethodImplRecord newRecord = new MethodImplRecord();
-                    newRecord.Decl = (MethodDesc)_module.GetObject(methodImpl.MethodDeclaration);
-                    newRecord.Body = (MethodDesc)_module.GetObject(methodImpl.MethodBody);
+                    MethodImplRecord newRecord = new MethodImplRecord(
+                        (MethodDesc)_module.GetObject(methodImpl.MethodDeclaration),
+                        (MethodDesc)_module.GetObject(methodImpl.MethodBody));
 
                     foundRecords.Add(newRecord);
                 }
@@ -118,9 +119,9 @@ namespace Internal.TypeSystem.Ecma
 
                 if (!owningType.IsInterface)
                 {
-                    MethodImplRecord newRecord = new MethodImplRecord();
-                    newRecord.Decl = (MethodDesc)_module.GetObject(methodImpl.MethodDeclaration);
-                    newRecord.Body = (MethodDesc)_module.GetObject(methodImpl.MethodBody);
+                    MethodImplRecord newRecord = new MethodImplRecord(
+                        (MethodDesc)_module.GetObject(methodImpl.MethodDeclaration),
+                        (MethodDesc)_module.GetObject(methodImpl.MethodBody));
                     records.Add(newRecord);
                 }
             }

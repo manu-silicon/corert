@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 // -----------------------------------------------------------------------------------------------------------
 // Support for emitting debug events with particular payloads that a managed-aware debugger can listen for.
 // The events are generated using 1st chance SEH exceptions that the debugger should immediately continue
@@ -16,11 +15,9 @@
 // This global is set from out of process using the debugger. It controls which events are emitted.
 GVAL_DECL(UInt32, g_DebuggerEventsFilter);
 
-#ifndef DACCESS_COMPILE
-
-// this is also defined in cordebug.h, but I don't want to pull that header into redhawk
-// runtime build.
 typedef UInt64 CORDB_ADDRESS;
+
+#ifndef DACCESS_COMPILE
 
 struct DebugEventPayload;
 

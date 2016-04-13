@@ -1,17 +1,18 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
-using System.Text;
 using System.Collections.Generic;
+using System.Text;
 using System.Diagnostics;
 
 namespace Internal.TypeSystem
 {
     public sealed partial class InstantiatedType : MetadataType
     {
-        MetadataType _typeDef;
-        Instantiation _instantiation;
+        private MetadataType _typeDef;
+        private Instantiation _instantiation;
 
         internal InstantiatedType(MetadataType typeDef, Instantiation instantiation)
         {
@@ -24,12 +25,12 @@ namespace Internal.TypeSystem
             _baseType = this; // Not yet initialized flag
         }
 
-        int _hashCode;
+        private int _hashCode;
 
         public override int GetHashCode()
         {
             if (_hashCode == 0)
-                _hashCode = Internal.NativeFormat.TypeHashingAlgorithms.ComputeGenericInstanceHashCode(_typeDef.GetHashCode(), _instantiation);
+                _hashCode = _instantiation.ComputeGenericInstanceHashCode(_typeDef.GetHashCode());
             return _hashCode;
         }
 
@@ -49,9 +50,9 @@ namespace Internal.TypeSystem
             }
         }
 
-        MetadataType _baseType /* = this */;
+        private MetadataType _baseType /* = this */;
 
-        MetadataType InitializeBaseType()
+        private MetadataType InitializeBaseType()
         {
             var uninst = _typeDef.MetadataBaseType;
 
@@ -75,44 +76,6 @@ namespace Internal.TypeSystem
                 if (_baseType == this)
                     return InitializeBaseType();
                 return _baseType;
-            }
-        }
-
-        TypeDesc[] _implementedInterfaces = null;
-
-        TypeDesc[] InitializeImplementedInterfaces()
-        {
-            TypeDesc[] uninstInterfaces = _typeDef.ImplementedInterfaces;
-            TypeDesc[] instInterfaces = null;
-
-            for (int i = 0; i<uninstInterfaces.Length; i++)
-            {
-                TypeDesc uninst = uninstInterfaces[i];
-                TypeDesc inst = uninst.InstantiateSignature(_instantiation, new Instantiation());
-                if (inst != uninst)
-                {
-                    if (instInterfaces == null)
-                    {
-                        instInterfaces = new TypeDesc[uninstInterfaces.Length];
-                        for (int j = 0; j<uninstInterfaces.Length; j++)
-                        {
-                            instInterfaces[j] = uninstInterfaces[j];
-                        }
-                    }
-                    instInterfaces[i] = inst;
-                }
-            }
-
-            return (_implementedInterfaces = (instInterfaces != null) ? instInterfaces : uninstInterfaces);
-        }
-
-        public override TypeDesc[] ImplementedInterfaces
-        {
-            get
-            {
-                if (_implementedInterfaces == null)
-                    return InitializeImplementedInterfaces();
-                return _implementedInterfaces;
             }
         }
 
@@ -150,6 +113,14 @@ namespace Internal.TypeSystem
             }
         }
 
+        public override string Namespace
+        {
+            get
+            {
+                return _typeDef.Namespace;
+            }
+        }
+
         public override IEnumerable<MethodDesc> GetMethods()
         {
             foreach (var typicalMethodDef in _typeDef.GetMethods())
@@ -181,6 +152,14 @@ namespace Internal.TypeSystem
             if (typicalCctor == null)
                 return null;
             return _typeDef.Context.GetMethodForInstantiatedType(typicalCctor, this);
+        }
+
+        public override MethodDesc GetFinalizer()
+        {
+            MethodDesc typicalFinalizer = _typeDef.GetFinalizer();
+            if (typicalFinalizer == null)
+                return null;
+            return _typeDef.Context.GetMethodForInstantiatedType(typicalFinalizer, this);
         }
 
         public override IEnumerable<FieldDesc> GetFields()
@@ -223,6 +202,34 @@ namespace Internal.TypeSystem
             }
 
             return (clone == null) ? this : _typeDef.Context.GetInstantiatedType(_typeDef, new Instantiation(clone));
+        }
+
+        /// <summary>
+        /// Instantiate an array of TypeDescs over typeInstantiation and methodInstantiation
+        /// </summary>
+        public static T[] InstantiateTypeArray<T>(T[] uninstantiatedTypes, Instantiation typeInstantiation, Instantiation methodInstantiation) where T : TypeDesc
+        {
+            T[] clone = null;
+
+            for (int i = 0; i < uninstantiatedTypes.Length; i++)
+            {
+                T uninst = uninstantiatedTypes[i];
+                TypeDesc inst = uninst.InstantiateSignature(typeInstantiation, methodInstantiation);
+                if (inst != uninst)
+                {
+                    if (clone == null)
+                    {
+                        clone = new T[uninstantiatedTypes.Length];
+                        for (int j = 0; j < clone.Length; j++)
+                        {
+                            clone[j] = uninstantiatedTypes[j];
+                        }
+                    }
+                    clone[i] = (T)inst;
+                }
+            }
+
+            return clone != null ? clone : uninstantiatedTypes;
         }
 
         // Strips instantiation. E.g C<int> -> C<T>
@@ -279,17 +286,38 @@ namespace Internal.TypeSystem
             }
         }
 
-        public override bool IsModuleType
+        public override ModuleDesc Module
         {
             get
             {
-                return false;
+                return _typeDef.Module;
             }
         }
 
         public override bool HasCustomAttribute(string attributeNamespace, string attributeName)
         {
             return _typeDef.HasCustomAttribute(attributeNamespace, attributeName);
+        }
+
+        public override MetadataType ContainingType
+        {
+            get
+            {
+                // Return the result from the typical type definition.
+                return _typeDef.ContainingType;
+            }
+        }
+
+        public override MetadataType GetNestedType(string name)
+        {
+            // Return the result from the typical type definition.
+            return _typeDef.GetNestedType(name);
+        }
+
+        public override IEnumerable<MetadataType> GetNestedTypes()
+        {
+            // Return the result from the typical type definition.
+            return _typeDef.GetNestedTypes();
         }
     }
 }

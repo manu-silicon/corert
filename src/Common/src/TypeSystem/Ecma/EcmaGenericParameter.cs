@@ -1,20 +1,21 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
-using System.Reflection;
 using System.Reflection.Metadata;
-using System.Threading;
+using Internal.NativeFormat;
 
-using Internal.TypeSystem;
+using Debug = System.Diagnostics.Debug;
+using GenericParameterAttributes = System.Reflection.GenericParameterAttributes;
 
 namespace Internal.TypeSystem.Ecma
 {
-    public sealed class EcmaGenericParameter : TypeDesc
+    public sealed partial class EcmaGenericParameter : GenericParameterDesc
     {
-        EcmaModule _module;
-        GenericParameterHandle _handle;
+        private EcmaModule _module;
+        private GenericParameterHandle _handle;
 
         internal EcmaGenericParameter(EcmaModule module, GenericParameterHandle handle)
         {
@@ -22,10 +23,37 @@ namespace Internal.TypeSystem.Ecma
             _handle = handle;
         }
 
-        // TODO: Use stable hashcode based on the type name?
-        // public override int GetHashCode()
-        // {
-        // }
+        public override int GetHashCode()
+        {
+            // TODO: Determine what a the right hash function should be. Use stable hashcode based on the type name?
+            // For now, use the same hash as a SignatureVariable type.
+            GenericParameter parameter = _module.MetadataReader.GetGenericParameter(_handle);
+            return TypeHashingAlgorithms.ComputeSignatureVariableHashCode(parameter.Index, parameter.Parent.Kind == HandleKind.MethodDefinition);
+        }
+
+        public GenericParameterHandle Handle
+        {
+            get
+            {
+                return _handle;
+            }
+        }
+
+        public MetadataReader MetadataReader
+        {
+            get
+            {
+                return _module.MetadataReader;
+            }
+        }
+
+        public EcmaModule Module
+        {
+            get
+            {
+                return _module;
+            }
+        }
 
         public override TypeSystemContext Context
         {
@@ -43,27 +71,92 @@ namespace Internal.TypeSystem.Ecma
 
             flags |= TypeFlags.GenericParameter;
 
+            Debug.Assert((flags & mask) != 0);
             return flags;
         }
 
-#if CCIGLUE
-        public TypeDesc DefiningType
+        public override TypeDesc InstantiateSignature(Instantiation typeInstantiation, Instantiation methodInstantiation)
         {
-            get
+            GenericParameter parameter = _module.MetadataReader.GetGenericParameter(_handle);
+            if (parameter.Parent.Kind == HandleKind.MethodDefinition)
             {
-                var genericParameter = _module.MetadataReader.GetGenericParameter(_handle);
-                return _module.GetObject(genericParameter.Parent) as TypeDesc;
+                return methodInstantiation[parameter.Index];
+            }
+            else
+            {
+                Debug.Assert(parameter.Parent.Kind == HandleKind.TypeDefinition);
+                return typeInstantiation[parameter.Index];
             }
         }
 
-        public MethodDesc DefiningMethod
+        public override GenericParameterKind Kind
         {
             get
             {
-                var genericParameter = _module.MetadataReader.GetGenericParameter(_handle);
-                return _module.GetObject(genericParameter.Parent) as MethodDesc;
+                GenericParameter parameter = _module.MetadataReader.GetGenericParameter(_handle);
+                if (parameter.Parent.Kind == HandleKind.MethodDefinition)
+                {
+                    return GenericParameterKind.Method;
+                }
+                else
+                {
+                    Debug.Assert(parameter.Parent.Kind == HandleKind.TypeDefinition);
+                    return GenericParameterKind.Type;
+                }
             }
         }
-#endif
+
+        public override int Index
+        {
+            get
+            {
+                GenericParameter parameter = _module.MetadataReader.GetGenericParameter(_handle);
+                return parameter.Index;
+            }
+        }
+
+        public override GenericVariance Variance
+        {
+            get
+            {
+                Debug.Assert((int)GenericVariance.Contravariant == (int)GenericParameterAttributes.Contravariant);
+                GenericParameter parameter = _module.MetadataReader.GetGenericParameter(_handle);
+                return (GenericVariance)(parameter.Attributes & GenericParameterAttributes.VarianceMask);
+            }
+        }
+
+        public override GenericConstraints Constraints
+        {
+            get
+            {
+                Debug.Assert((int)GenericConstraints.DefaultConstructorConstraint == (int)GenericParameterAttributes.DefaultConstructorConstraint);
+                GenericParameter parameter = _module.MetadataReader.GetGenericParameter(_handle);
+                return (GenericConstraints)(parameter.Attributes & GenericParameterAttributes.SpecialConstraintMask);
+            }
+        }
+        
+        public override IEnumerable<TypeDesc> TypeConstraints
+        {
+            get
+            {
+                MetadataReader reader = _module.MetadataReader;
+
+                GenericParameter parameter = reader.GetGenericParameter(_handle);
+                GenericParameterConstraintHandleCollection constraintHandles = parameter.GetConstraints();
+
+                if (constraintHandles.Count == 0)
+                    return Array.Empty<TypeDesc>();
+
+                TypeDesc[] constraintTypes = new TypeDesc[constraintHandles.Count];
+
+                for (int i = 0; i < constraintTypes.Length; i++)
+                {
+                    GenericParameterConstraint constraint = reader.GetGenericParameterConstraint(constraintHandles[i]);
+                    constraintTypes[i] = _module.GetType(constraint.Type);
+                };
+
+                return constraintTypes;
+            }
+        }
     }
 }

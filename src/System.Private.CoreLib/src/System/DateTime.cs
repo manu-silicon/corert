@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Threading;
@@ -46,7 +47,7 @@ namespace System
     // 
     [StructLayout(LayoutKind.Auto)]
 
-    public struct DateTime : IComparable, IFormattable, IComparable<DateTime>, IEquatable<DateTime>, IConvertible
+    public partial struct DateTime : IComparable, IFormattable, IComparable<DateTime>, IEquatable<DateTime>, IConvertible
     {
         // Number of 100ns ticks per time unit
         private const long TicksPerMillisecond = 10000;
@@ -83,6 +84,7 @@ namespace System
         internal const long MaxTicks = DaysTo10000 * TicksPerDay - 1;
         private const long MaxMillis = (long)DaysTo10000 * MillisPerDay;
 
+        private const long TicksTo1970 = DaysTo1970 *  TicksPerDay;
         private const long FileTimeOffset = DaysTo1601 * TicksPerDay;
         private const long DoubleDateOffset = DaysTo1899 * TicksPerDay;
         // The minimum OA date is 0100/01/01 (Note it's year 100).
@@ -850,26 +852,6 @@ namespace System
                 }
                 return new DateTime(tick, DateTimeKind.Local, isAmbiguousLocalDst);
             }
-        }
-
-        public static DateTime UtcNow
-        {
-            [System.Security.SecuritySafeCritical]  // auto-generated
-            get
-            {
-                Contract.Ensures(Contract.Result<DateTime>().Kind == DateTimeKind.Utc);
-                // following code is tuned for speed. Don't change it without running benchmark.
-                long ticks = 0;
-                ticks = GetSystemTimeAsFileTime();
-                return new DateTime(((UInt64)(ticks + FileTimeOffset)) | KindUtc);
-            }
-        }
-
-        internal unsafe static long GetSystemTimeAsFileTime()
-        {
-            Interop._FILETIME filetime;
-            Interop.mincore.GetSystemTimeAsFileTime(out filetime);
-            return *(long*)&filetime;
         }
 
         // Returns the second part of this DateTime. The returned value is

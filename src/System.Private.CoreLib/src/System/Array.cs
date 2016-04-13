@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Runtime;
 using System.Threading;
@@ -122,7 +123,7 @@ namespace System
                 throw new ArgumentOutOfRangeException("length");
 
             Type arrayType = GetArrayTypeFromElementType(elementType, false, 1);
-            return RuntimeImports.RhNewArray(arrayType.TypeHandle.EEType, length);
+            return RuntimeImports.RhNewArray(arrayType.TypeHandle.ToEETypePtr(), length);
         }
 
         private static Array CreateMultiDimArray(Type elementType, int[] lengths, int[] lowerBounds)
@@ -146,6 +147,9 @@ namespace System
             RuntimeType runtimeElementType = elementType as RuntimeType;
             if (runtimeElementType == null)
                 throw new InvalidOperationException(SR.InvalidOperation_ArrayCreateInstance_NotARuntimeType);
+            if (runtimeElementType.Equals(typeof(void)))
+                throw new NotSupportedException(SR.NotSupported_VoidArray);
+
             try
             {
                 if (multiDim)
@@ -155,8 +159,6 @@ namespace System
             }
             catch
             {
-                if (runtimeElementType.Equals(typeof(void)))
-                    throw new NotSupportedException(SR.NotSupported_VoidArray);
                 if (runtimeElementType.InternalIsOpen)
                     throw new NotSupportedException(SR.NotSupported_OpenType);
                 throw;
@@ -247,10 +249,6 @@ namespace System
         //
         private static unsafe void CopyImpl(Array sourceArray, int sourceIndex, Array destinationArray, int destinationIndex, int length, bool reliable)
         {
-#if CORERT
-            // CORERT-TODO This depends on a lot of stuff that we do not handle yet
-            throw new NotSupportedException();
-#else
             if (sourceArray == null)
                 throw new ArgumentNullException("sourceArray");
             if (destinationArray == null)
@@ -313,7 +311,6 @@ namespace System
                     CopyImplPrimitiveTypeWithWidening(sourceArray, sourceIndex, destinationArray, destinationIndex, length);
                 }
             }
-#endif
         }
 
         private static bool IsSourceElementABaseClassOrInterfaceOfDestinationValueType(EETypePtr sourceElementEEType, EETypePtr destinationElementEEType)
@@ -1336,6 +1333,42 @@ namespace System
             return -1;
         }
 
+#if !CORERT
+       // These functions look odd, as they are part of a complex series of compiler intrinsics
+       // designed to produce very high quality code for equality comparison cases without utilizing
+       // reflection like other platforms. The major complication is that the specification of
+       // IndexOf is that it is supposed to use IEquatable<T> if possible, but that requirement
+       // cannot be expressed in IL directly due to the lack of constraints.
+       // Instead, specialization at call time is used within the compiler. 
+       // 
+       // General Approach
+       // - Redirect calls to LowLevelEqualityComparer<T>.Equals to EqualityComparer<T>.Equals, and also 
+       //   do the same for get_Default in case anyone ever calls that. This allows the use of 
+       //   LowLevelEqualityComparer<T> to result in usage of EqualityComparer<T>
+       // - Perform fancy redirection for Array.GetComparerForReferenceTypesOnly<T>(). If T is a reference 
+       //   type or UniversalCanon, have this redirect to EqualityComparer<T>.get_Default, Otherwise, use 
+       //   the function as is. (will return null in that case)
+       // - Change the contents of the IndexOf functions to have a pair of loops. One for if 
+       //   GetComparerForReferenceTypesOnly returns null, and one for when it does not. 
+       //   - If it does not return null, call the EqualityComparer<T> code.
+       //   - If it does return null, use a special function StructOnlyEquals<T>(). 
+       //     - Calls to that function result in calls to a pair of helper function in 
+       //       EqualityComparerHelpers (StructOnlyEqualsIEquatable, or StructOnlyEqualsNullable) 
+       //       depending on whether or not they are the right function to call.
+       // - The end result is that in optimized builds, we have the same single function compiled size 
+       //   characteristics that the old EqualsOnlyComparer<T>.Equals function had, but we maintain 
+       //   correctness as well.
+        private static LowLevelEqualityComparer<T> GetComparerForReferenceTypesOnly<T>()
+        {
+            // When T is a reference type or a universal canon type, then this will redirect to EqualityComparer<T>.Default.
+            return null;
+        }
+
+        private static bool StructOnlyEquals<T>(T left, T right)
+        {
+           return left.Equals(right);
+        }
+#endif
         /// <summary>
         /// This version is called from Array<T>.IndexOf and Contains<T>, so it's in every unique array instance due to array interface implementation.
         /// Do not call into IndexOf<T>(Array array, Object value, int startIndex, int count) for size and space reasons.
@@ -1348,12 +1381,34 @@ namespace System
                 throw new ArgumentNullException("array");
             }
 
+#if CORERT
             for (int i = 0; i < array.Length; i++)
             {
                 if (EqualOnlyComparer<T>.Equals(array[i], value))
                     return i;
             }
 
+#else
+            // See comment above Array.GetComparerForReferenceTypesOnly for details
+            LowLevelEqualityComparer<T> comparer = GetComparerForReferenceTypesOnly<T>();
+
+            if (comparer != null)
+            {
+                for (int i = 0; i < array.Length; i++)
+                {
+                    if (comparer.Equals(array[i], value))
+                        return i;
+                }
+            }
+            else
+            {
+                for (int i = 0; i < array.Length; i++)
+                {
+                    if (StructOnlyEquals<T>(array[i], value))
+                        return i;
+                }
+            }
+#endif
             return -1;
         }
 
@@ -1385,11 +1440,33 @@ namespace System
             }
 
             int endIndex = startIndex + count;
+#if CORERT
             for (int i = startIndex; i < endIndex; i++)
             {
                 if (EqualOnlyComparer<T>.Equals(array[i], value))
                     return i;
             }
+#else
+            // See comment above Array.GetComparerForReferenceTypesOnly for details
+            LowLevelEqualityComparer<T> comparer = GetComparerForReferenceTypesOnly<T>();
+
+            if (comparer != null)
+            {
+                for (int i = startIndex; i < endIndex; i++)
+                {
+                    if (comparer.Equals(array[i], value))
+                        return i;
+                }
+            }
+            else
+            {
+                for (int i = startIndex; i < endIndex; i++)
+                {
+                    if (StructOnlyEquals<T>(array[i], value))
+                        return i;
+                }
+            }
+#endif
             return -1;
         }
 
@@ -1536,11 +1613,34 @@ namespace System
                 throw new ArgumentOutOfRangeException("count", SR.ArgumentOutOfRange_Count);
             }
 
+#if CORERT
             int endIndex = startIndex - count + 1;
             for (int i = startIndex; i >= endIndex; i--)
             {
                 if (EqualOnlyComparer<T>.Equals(array[i], value)) return i;
             }
+#else
+            // See comment above Array.GetComparerForReferenceTypesOnly for details
+            LowLevelEqualityComparer<T> comparer = GetComparerForReferenceTypesOnly<T>();
+
+            int endIndex = startIndex - count + 1;
+            if (comparer != null)
+            {
+                for (int i = startIndex; i >= endIndex; i--)
+                {
+                    if (comparer.Equals(array[i], value))
+                        return i;
+                }
+            }
+            else
+            {
+                for (int i = startIndex; i >= endIndex; i--)
+                {
+                    if (StructOnlyEquals<T>(array[i], value))
+                        return i;
+                }
+            }
+#endif
             return -1;
         }
 
@@ -1822,7 +1922,6 @@ namespace System
             Sort<TKey, TValue>(keys, items, 0, keys.Length, comparer);
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public static void Sort<TKey, TValue>(TKey[] keys, TValue[] items, int index, int length, IComparer<TKey> comparer)
         {
             if (keys == null)

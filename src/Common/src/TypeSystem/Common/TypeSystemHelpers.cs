@@ -1,6 +1,9 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
+using System;
+using System.Collections.Generic;
 using System.Diagnostics;
 
 namespace Internal.TypeSystem
@@ -17,35 +20,28 @@ namespace Internal.TypeSystem
             return methodDef.Context.GetInstantiatedMethod(methodDef, instantiation);
         }
 
-        static public TypeDesc MakeArrayType(this TypeDesc type)
+        static public ArrayType MakeArrayType(this TypeDesc type)
         {
             return type.Context.GetArrayType(type);
         }
 
-        static public TypeDesc MakeByRefType(this TypeDesc type)
+        /// <summary>
+        /// Creates a multidimensional array type with the specified rank.
+        /// To create a vector, use the <see cref="MakeArrayType(TypeDesc)"/> overload.
+        /// </summary>
+        static public ArrayType MakeArrayType(this TypeDesc type, int rank)
+        {
+            return type.Context.GetArrayType(type, rank);
+        }
+
+        static public ByRefType MakeByRefType(this TypeDesc type)
         {
             return type.Context.GetByRefType(type);
         }
 
-        static public TypeDesc MakePointerType(this TypeDesc type)
+        static public PointerType MakePointerType(this TypeDesc type)
         {
             return type.Context.GetPointerType(type);
-        }
-
-        static public DefType GetClosestDefType(this TypeDesc type)
-        {
-            if (type is DefType)
-                return (DefType)type;
-            else
-                return type.BaseType;
-        }
-
-        static public MetadataType GetClosestMetadataType(this TypeDesc type)
-        {
-            if (type is MetadataType)
-                return (MetadataType)type;
-            else
-                return type.BaseType.GetClosestMetadataType();
         }
 
         static public int GetElementSize(this TypeDesc type)
@@ -60,24 +56,28 @@ namespace Internal.TypeSystem
             }
         }
 
+        static public MethodDesc GetDefaultConstructor(this TypeDesc type)
+        {
+            // TODO: Do we want check for specialname/rtspecialname? Maybe add another overload on GetMethod?
+            var sig = new MethodSignature(0, 0, type.Context.GetWellKnownType(WellKnownType.Void), Array.Empty<TypeDesc>());
+            return type.GetMethod(".ctor", sig);
+        }
+
         static private MethodDesc FindMethodOnExactTypeWithMatchingTypicalMethod(this TypeDesc type, MethodDesc method)
         {
-            // Assert that either type is instantiated and its type definition is the type that defines the typical
-            // method definition of method, or that the owning type of the method typical definition is exactly type
-            Debug.Assert((type is InstantiatedType) ? 
-                ((InstantiatedType)type).GetTypeDefinition() == method.GetTypicalMethodDefinition().OwningType :
-                type == method.GetTypicalMethodDefinition().OwningType);
-
             MethodDesc methodTypicalDefinition = method.GetTypicalMethodDefinition();
 
-            foreach (MethodDesc methodToExamine in type.GetMethods())
+            var instantiatedType = type as InstantiatedType;
+            if (instantiatedType != null)
             {
-                if (methodToExamine.GetTypicalMethodDefinition() == methodTypicalDefinition)
-                    return methodToExamine;
+                Debug.Assert(instantiatedType.GetTypeDefinition() == methodTypicalDefinition.OwningType);
+                return method.Context.GetMethodForInstantiatedType(methodTypicalDefinition, instantiatedType);
             }
-
-            Debug.Assert(false, "Behavior of typical type not as expected.");
-            return null;
+            else
+            {
+                Debug.Assert(type == methodTypicalDefinition.OwningType);
+                return methodTypicalDefinition;
+            }
         }
 
         /// <summary>
@@ -120,6 +120,170 @@ namespace Internal.TypeSystem
 
             Debug.Assert(false, "method has no related type in the type hierarchy of type");
             return null;
+        }
+
+        /// <summary>
+        /// Attempts to resolve constrained call to <paramref name="interfaceMethod"/> into a concrete non-unboxing
+        /// method on <paramref name="constrainedType"/>.
+        /// The ability to resolve constraint methods is affected by the degree of code sharing we are performing
+        /// for generic code.
+        /// </summary>
+        /// <returns>The resolved method or null if the constraint couldn't be resolved.</returns>
+        static public MethodDesc TryResolveConstraintMethodApprox(this TypeDesc constrainedType, TypeDesc interfaceType, MethodDesc interfaceMethod, out bool forceRuntimeLookup)
+        {
+            forceRuntimeLookup = false;
+
+            // We can't resolve constraint calls effectively for reference types, and there's
+            // not a lot of perf. benefit in doing it anyway.
+            if (!constrainedType.IsValueType)
+            {
+                return null;
+            }
+
+            // Non-virtual methods called through constraints simply resolve to the specified method without constraint resolution.
+            if (!interfaceMethod.IsVirtual)
+            {
+                return null;
+            }
+
+            TypeDesc canonMT = constrainedType;
+
+            MethodDesc method;
+
+            MethodDesc genInterfaceMethod = interfaceMethod.GetMethodDefinition();
+            if (genInterfaceMethod.OwningType.IsInterface)
+            {
+                // Sometimes (when compiling shared generic code)
+                // we don't have enough exact type information at JIT time
+                // even to decide whether we will be able to resolve to an unboxed entry point...
+                // To cope with this case we always go via the helper function if there's any
+                // chance of this happening by checking for all interfaces which might possibly
+                // be compatible with the call (verification will have ensured that
+                // at least one of them will be)
+
+                // Enumerate all potential interface instantiations
+
+                // TODO: this code assumes no shared generics
+                Debug.Assert(interfaceType == interfaceMethod.OwningType);
+
+                method = constrainedType.ResolveInterfaceMethodToVirtualMethodOnType(genInterfaceMethod);
+            }
+            else if (genInterfaceMethod.IsVirtual)
+            {
+                method = constrainedType.FindVirtualFunctionTargetMethodOnObjectType(genInterfaceMethod);
+            }
+            else
+            {
+                // The method will be null if calling a non-virtual instance 
+                // methods on System.Object, i.e. when these are used as a constraint.
+                method = null;
+            }
+
+            if (method == null)
+            {
+                // Fall back to VSD
+                return null;
+            }
+
+            //#TryResolveConstraintMethodApprox_DoNotReturnParentMethod
+            // Only return a method if the value type itself declares the method, 
+            // otherwise we might get a method from Object or System.ValueType
+            if (!method.OwningType.IsValueType)
+            {
+                // Fall back to VSD
+                return null;
+            }
+
+            // We've resolved the method, ignoring its generic method arguments
+            // If the method is a generic method then go and get the instantiated descriptor
+            if (interfaceMethod.HasInstantiation)
+            {
+                method = method.InstantiateSignature(interfaceType.Instantiation, interfaceMethod.Instantiation);
+            }
+
+            Debug.Assert(method != null);
+            //assert(!pMD->IsUnboxingStub());
+
+            return method;
+        }
+
+        /// <summary>
+        /// Retrieves the namespace qualified name of a <see cref="MetadataType"/>.
+        /// </summary>
+        public static string GetFullName(this MetadataType metadataType)
+        {
+            string ns = metadataType.Namespace;
+            return ns.Length > 0 ? String.Concat(ns, ".", metadataType.Name) : metadataType.Name;
+        }
+
+        /// <summary>
+        /// Enumerates all virtual methods introduced or overriden by '<paramref name="type"/>'.
+        /// Note that this is not just a convenience method. This method is capable of enumerating
+        /// virtual method injected by the type system host.
+        /// </summary>
+        public static IEnumerable<MethodDesc> GetAllVirtualMethods(this TypeDesc type)
+        {
+            return type.Context.GetVirtualMethodEnumerationAlgorithmForType(type).ComputeAllVirtualMethods(type);
+        }
+
+        public static IEnumerable<MethodDesc> EnumAllVirtualSlots(this TypeDesc type)
+        {
+            return type.Context.GetVirtualMethodAlgorithmForType(type).ComputeAllVirtualSlots(type);
+        }
+
+        /// <summary>
+        /// Resolves interface method '<paramref name="interfaceMethod"/>' to a method on '<paramref name="type"/>'
+        /// that implements the the method.
+        /// </summary>
+        public static MethodDesc ResolveInterfaceMethodToVirtualMethodOnType(this TypeDesc type, MethodDesc interfaceMethod)
+        {
+            return type.Context.GetVirtualMethodAlgorithmForType(type).ResolveInterfaceMethodToVirtualMethodOnType(interfaceMethod, type);
+        }
+
+        /// <summary>
+        /// Resolves a virtual method call.
+        /// </summary>
+        public static MethodDesc FindVirtualFunctionTargetMethodOnObjectType(this TypeDesc type, MethodDesc targetMethod)
+        {
+            return type.Context.GetVirtualMethodAlgorithmForType(type).FindVirtualFunctionTargetMethodOnObjectType(targetMethod, type);
+        }
+
+        /// <summary>
+        /// Given Foo&lt;T&gt;, returns Foo&lt;!0&gt;.
+        /// </summary>
+        private static InstantiatedType InstantiateAsOpen(this MetadataType type)
+        {
+            Debug.Assert(type.HasInstantiation);
+            Debug.Assert(type.IsTypeDefinition);
+
+            TypeSystemContext context = type.Context;
+
+            var inst = new TypeDesc[type.Instantiation.Length];
+            for (int i = 0; i < inst.Length; i++)
+            {
+                inst[i] = context.GetSignatureVariable(i, false);
+            }
+
+            return context.GetInstantiatedType(type, new Instantiation(inst));
+        }
+
+        /// <summary>
+        /// Creates an open instantiation of a method. Given Foo&lt;T&gt;.Method, returns
+        /// Foo&lt;!0&gt;.Method. If the owning type is not generic, returns the <paramref name="method"/>.
+        /// </summary>
+        public static MethodDesc InstantiateAsOpen(this MethodDesc method)
+        {
+            Debug.Assert(method.IsMethodDefinition && !method.HasInstantiation);
+
+            TypeDesc owner = method.OwningType;
+
+            if (owner.HasInstantiation)
+            {
+                MetadataType instantiatedOwner = ((MetadataType)owner).InstantiateAsOpen();
+                return method.Context.GetMethodForInstantiatedType(method, (InstantiatedType)instantiatedOwner);
+            }
+
+            return method;
         }
     }
 }

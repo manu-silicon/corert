@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 // The worker functions in this file was optimized for performance. If you make changes
 // you should use care to consider all of the interesting cases.
@@ -114,7 +115,6 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public override unsafe int GetByteCount(char[] chars, int index, int count)
         {
             // Validate input parameters
@@ -145,7 +145,6 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public override unsafe int GetByteCount(String chars)
         {
             // Validate input
@@ -161,7 +160,6 @@ namespace System.Text
         // So if you fix this, fix the others.  Currently those include:
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
 
-        [System.Security.SecurityCritical]  // auto-generated
         [CLSCompliant(false)]
         [System.Runtime.InteropServices.ComVisible(false)]
         public override unsafe int GetByteCount(char* chars, int count)
@@ -185,7 +183,6 @@ namespace System.Text
         // So if you fix this, fix the others.  Currently those include:
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public override unsafe int GetBytes(String s, int charIndex, int charCount,
                                               byte[] bytes, int byteIndex)
         {
@@ -232,7 +229,6 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public override unsafe int GetBytes(char[] chars, int charIndex, int charCount,
                                                byte[] bytes, int byteIndex)
         {
@@ -276,7 +272,6 @@ namespace System.Text
         // So if you fix this, fix the others.  Currently those include:
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
 
-        [System.Security.SecurityCritical]  // auto-generated
         [CLSCompliant(false)]
         [System.Runtime.InteropServices.ComVisible(false)]
         public override unsafe int GetBytes(char* chars, int charCount, byte* bytes, int byteCount)
@@ -302,7 +297,6 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public override unsafe int GetCharCount(byte[] bytes, int index, int count)
         {
             // Validate Parameters
@@ -332,7 +326,6 @@ namespace System.Text
         // So if you fix this, fix the others.  Currently those include:
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
 
-        [System.Security.SecurityCritical]  // auto-generated
         [CLSCompliant(false)]
         [System.Runtime.InteropServices.ComVisible(false)]
         public override unsafe int GetCharCount(byte* bytes, int count)
@@ -355,7 +348,6 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public override unsafe int GetChars(byte[] bytes, int byteIndex, int byteCount,
                                               char[] chars, int charIndex)
         {
@@ -399,7 +391,6 @@ namespace System.Text
         // So if you fix this, fix the others.  Currently those include:
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
 
-        [System.Security.SecurityCritical]  // auto-generated
         [CLSCompliant(false)]
         [System.Runtime.InteropServices.ComVisible(false)]
         public unsafe override int GetChars(byte* bytes, int byteCount, char* chars, int charCount)
@@ -425,7 +416,6 @@ namespace System.Text
         // EncodingNLS, UTF7Encoding, UTF8Encoding, UTF32Encoding, ASCIIEncoding, UnicodeEncoding
         // parent method is safe
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         [System.Runtime.InteropServices.ComVisible(false)]
         public override unsafe String GetString(byte[] bytes, int index, int count)
         {
@@ -457,7 +447,6 @@ namespace System.Text
 
         // To simplify maintenance, the structure of GetByteCount and GetBytes should be
         // kept the same as much as possible
-        [System.Security.SecurityCritical]  // auto-generated
         internal override unsafe int GetByteCount(char* chars, int count, EncoderNLS baseEncoder)
         {
             // For fallback we may need a fallback buffer.
@@ -489,7 +478,7 @@ namespace System.Text
                 }
             }
 
-            for (; ;)
+            for (;;)
             {
                 // SLOWLOOP: does all range checks, handles all special cases, but it is slow
                 if (pSrc >= pEnd)
@@ -841,14 +830,12 @@ namespace System.Text
         // diffs two char pointers using unsigned arithmetic. The unsigned arithmetic
         // is good enough for us, and it tends to generate better code than the signed
         // arithmetic generated by default
-        [System.Security.SecurityCritical]  // auto-generated
         unsafe private static int PtrDiff(char* a, char* b)
         {
             return (int)(((uint)((byte*)a - (byte*)b)) >> 1);
         }
 
         // byte* flavor just for parity
-        [System.Security.SecurityCritical]  // auto-generated
         unsafe private static int PtrDiff(byte* a, byte* b)
         {
             return (int)(a - b);
@@ -861,7 +848,6 @@ namespace System.Text
 
         // Our workhorse
         // Note:  We ignore mismatched surrogates, unless the exception flag is set in which case we throw
-        [System.Security.SecurityCritical]  // auto-generated
         internal override unsafe int GetBytes(char* chars, int charCount,
                                                 byte* bytes, int byteCount, EncoderNLS baseEncoder)
         {
@@ -904,7 +890,7 @@ namespace System.Text
                 }
             }
 
-            for (; ;)
+            for (;;)
             {
                 // SLOWLOOP: does all range checks, handles all special cases, but it is slow
 
@@ -1314,7 +1300,7 @@ namespace System.Text
             if (encoder != null)
             {
                 Contract.Assert(!encoder.MustFlush || ch == 0,
-                    "[UTF8Encoding.GetBytes] Expected no mustflush or 0 leftover ch " + ch.ToString("X2", FormatProvider.InvariantCulture));
+                    "[UTF8Encoding.GetBytes] Expected no mustflush or 0 leftover ch");
 
                 encoder.surrogateChar = ch;
                 encoder.m_charsUsed = (int)(pSrc - chars);
@@ -1342,7 +1328,6 @@ namespace System.Text
         //
         // To simplify maintenance, the structure of GetCharCount and GetChars should be
         // kept the same as much as possible
-        [System.Security.SecurityCritical]  // auto-generated
         internal override unsafe int GetCharCount(byte* bytes, int count, DecoderNLS baseDecoder)
         {
             Contract.Assert(count >= 0, "[UTF8Encoding.GetCharCount]count >=0");
@@ -1370,7 +1355,7 @@ namespace System.Text
                     "[UTF8Encoding.GetCharCount]Expected empty fallback buffer at start");
             }
 
-            for (; ;)
+            for (;;)
             {
                 // SLOWLOOP: does all range checks, handles all special cases, but it is slow
 
@@ -1772,7 +1757,6 @@ namespace System.Text
         //
         // To simplify maintenance, the structure of GetCharCount and GetChars should be
         // kept the same as much as possible
-        [System.Security.SecurityCritical]  // auto-generated
         internal override unsafe int GetChars(byte* bytes, int byteCount,
                                                 char* chars, int charCount, DecoderNLS baseDecoder)
         {
@@ -1801,7 +1785,7 @@ namespace System.Text
                     "[UTF8Encoding.GetChars]Expected empty fallback buffer at start");
             }
 
-            for (; ;)
+            for (;;)
             {
                 // SLOWLOOP: does all range checks, handles all special cases, but it is slow
 
@@ -2344,7 +2328,6 @@ namespace System.Text
         // During GetChars we had an invalid byte sequence
         // pSrc is backed up to the start of the bad sequence if we didn't have room to
         // fall it back.  Otherwise pSrc remains wher it is.
-        [System.Security.SecurityCritical]  // auto-generated
         private unsafe bool FallbackInvalidByteSequence(
             ref byte* pSrc, int ch, DecoderFallbackBuffer fallback, ref char* pTarget)
         {
@@ -2367,7 +2350,6 @@ namespace System.Text
         // During GetCharCount we had an invalid byte sequence
         // pSrc is used to find the index that points to the invalid bytes,
         // however the byte[] contains the fallback bytes (in case the index is -1)
-        [System.Security.SecurityCritical]  // auto-generated
         private unsafe int FallbackInvalidByteSequence(
             byte* pSrc, int ch, DecoderFallbackBuffer fallback)
         {
@@ -2386,7 +2368,6 @@ namespace System.Text
         // Note that some of these bytes may have come from a previous fallback, so we cannot
         // just decrement the pointer and use the values we read.  In those cases we have 
         // to regenerate the original values.
-        [System.Security.SecurityCritical]  // auto-generated
         private unsafe byte[] GetBytesUnknown(ref byte* pSrc, int ch)
         {
             // Get our byte[]

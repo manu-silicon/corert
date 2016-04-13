@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 #include "forward_declarations.h"
 
 MSVC_SAVE_WARNING_STATE()
@@ -57,11 +56,6 @@ public:
 
     // Removes and returns the first entry in the list. See class header for more information.
     PTR_T PopHead();
-#ifdef FEATURE_VSD
-    // This API is currently used only by VSD and it has a race condition. Possibly not worth fixing since
-    // it's hard and we may be getting rid of VSD entirely.
-    PTR_T PopHeadInterlocked();
-#endif
 
     class Iterator
     {

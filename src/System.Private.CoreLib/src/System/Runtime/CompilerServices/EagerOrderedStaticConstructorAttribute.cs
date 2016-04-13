@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+﻿// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 namespace System.Runtime.CompilerServices
 {
@@ -21,11 +22,6 @@ namespace System.Runtime.CompilerServices
 
     public enum EagerStaticConstructorOrder : int
     {
-        // System.Private.TypeLoader  
-        RuntimeTypeHandleEqualityComparer,
-        TypeLoaderEnvirnoment,
-        SystemRuntimeTypeLoaderExports,
-
         // System.Private.CoreLib
         SystemString,
         SystemPreallocatedOutOfMemoryException,
@@ -34,9 +30,20 @@ namespace System.Runtime.CompilerServices
         CompilerServicesClassConstructorRunnerCctor,
         CompilerServicesClassConstructorRunner,
 
+        // System.Private.TypeLoader  
+        RuntimeTypeHandleEqualityComparer,
+        TypeLoaderEnvironment,
+        SystemRuntimeTypeLoaderExports,
+
         // Interop
         InteropHeap,
         VtableIUnknown,
-        McgModuleManager
+        McgModuleManager,
+
+        // Per Module Interop
+        McgCurrentModule,
+
+        // System.Private.Reflection.Execution
+        ReflectionExecution,
     }
 }

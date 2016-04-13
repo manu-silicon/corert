@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //
 // Unmanaged helpers exposed by the System.GC managed class.
@@ -35,11 +34,7 @@ EXTERN_C REDHAWK_API void __cdecl RhWaitForPendingFinalizers(BOOL allowReentrant
     // called in cooperative mode.
     ASSERT(!GetThread()->PreemptiveGCDisabled());
 
-#ifdef USE_PORTABLE_HELPERS
-    ASSERT(!"@TODO: FINALIZER THREAD NYI");
-#else
-    GCHeap::GetGCHeap()->FinalizerThreadWait(INFINITE, allowReentrantWait);
-#endif
+    FinalizerThread::Wait(INFINITE, allowReentrantWait);
 }
 
 COOP_PINVOKE_HELPER(Int32, RhGetMaxGcGeneration, ())
@@ -95,7 +90,7 @@ COOP_PINVOKE_HELPER(void, RhUnregisterGcCallout, (GcRestrictedCalloutKind eKind,
 
 COOP_PINVOKE_HELPER(Boolean, RhIsPromoted, (OBJECTREF obj))
 {
-    return GCHeap::GetGCHeap()->IsPromoted(obj);
+    return GCHeap::GetGCHeap()->IsPromoted(obj) ? Boolean_true : Boolean_false;
 }
 
 COOP_PINVOKE_HELPER(Int32, RhGetLohCompactionMode, ())

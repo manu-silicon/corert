@@ -1,9 +1,11 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Collections.Generic;
 using System.Runtime.InteropServices;
+using Internal.Runtime.Augments;
 
 namespace Internal.Runtime.CompilerServices
 {
@@ -88,7 +90,7 @@ namespace Internal.Runtime.CompilerServices
 
                         // New generic descriptors are allocated on the native heap and not tracked in the GC.
                         UIntPtr allocationSize = new UIntPtr((uint)(c_genericDictionaryChunkSize * sizeof(RuntimeGeneratedGenericMethodDescriptor)));
-                        IntPtr pNewMem = Interop.mincore.HeapAlloc(Interop.mincore.GetProcessHeap(), 0, allocationSize);
+                        IntPtr pNewMem = Interop.MemAlloc(allocationSize);
                         s_genericFunctionPointerCollection.Add(pNewMem);
                     }
 
@@ -139,7 +141,9 @@ namespace Internal.Runtime.CompilerServices
         {
             if (!IsGenericMethodPointer(functionPointerA))
             {
-                return functionPointerA == functionPointerB;
+                IntPtr codeTargetA = RuntimeAugments.GetCodeTarget(functionPointerA);
+                IntPtr codeTargetB = RuntimeAugments.GetCodeTarget(functionPointerB);
+                return codeTargetA == codeTargetB;
             }
             else
             {
@@ -152,7 +156,9 @@ namespace Internal.Runtime.CompilerServices
                 if (pointerDefA->InstantiationArgument != pointerDefB->InstantiationArgument)
                     return false;
 
-                return pointerDefA->MethodFunctionPointer == pointerDefB->MethodFunctionPointer;
+                IntPtr codeTargetA = RuntimeAugments.GetCodeTarget(pointerDefA->MethodFunctionPointer);
+                IntPtr codeTargetB = RuntimeAugments.GetCodeTarget(pointerDefB->MethodFunctionPointer);
+                return codeTargetA == codeTargetB;
             }
         }
     }

@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Runtime.CompilerServices;
@@ -20,6 +21,8 @@ namespace Internal.TypeSystem
 
         public override bool Equals(Object o)
         {
+            // Its only valid to compare two FieldDescs in the same context
+            Debug.Assert(Object.ReferenceEquals(o, null) || !(o is FieldDesc) || Object.ReferenceEquals(((FieldDesc)o).Context, this.Context));
             return Object.ReferenceEquals(this, o);
         }
 
@@ -36,7 +39,7 @@ namespace Internal.TypeSystem
             get;
         }
 
-        public abstract MetadataType OwningType
+        public abstract DefType OwningType
         {
             get;
         }
@@ -62,6 +65,11 @@ namespace Internal.TypeSystem
         }
 
         public abstract bool HasRva
+        {
+            get;
+        }
+
+        public abstract bool IsLiteral
         {
             get;
         }

@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*=============================================================================
 **
@@ -28,7 +29,6 @@ namespace System.Threading
     {
         private static bool s_dummyBool;
 
-        [System.Security.SecurityCritical]  // auto-generated_required
         public Mutex(bool initiallyOwned, String name, out bool createdNew)
         {
             if (null != name && ((int)Interop.Constants.MaxPath) < (uint)name.Length)
@@ -38,46 +38,41 @@ namespace System.Threading
             Contract.EndContractBlock();
 
             SafeWaitHandle mutexHandle;
-            uint errorCode = CreateMutexHandle(initiallyOwned, name, out mutexHandle);
+            int errorCode = CreateMutexHandle(initiallyOwned, name, out mutexHandle);
             if (mutexHandle.IsInvalid)
             {
                 mutexHandle.SetHandleAsInvalid();
-                if (null != name && 0 != name.Length && (uint)Interop.Constants.ErrorInvalidHandle == errorCode)
+                if (null != name && 0 != name.Length && Interop.mincore.Errors.ERROR_INVALID_HANDLE == errorCode)
                     throw new WaitHandleCannotBeOpenedException(SR.Format(SR.Threading_WaitHandleCannotBeOpenedException_InvalidHandle, name));
                 throw ExceptionFromCreationError(errorCode, name);
             }
 
-            createdNew = errorCode != (int)Interop.Constants.ErrorAlreadyExists;
+            createdNew = errorCode != Interop.mincore.Errors.ERROR_ALREADY_EXISTS;
 
             SafeWaitHandle = mutexHandle;
         }
 
 
-        [System.Security.SecurityCritical]  // auto-generated_required
         public Mutex(bool initiallyOwned, String name)
             : this(initiallyOwned, name, out s_dummyBool)
         {
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public Mutex(bool initiallyOwned)
             : this(initiallyOwned, null, out s_dummyBool)
         {
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public Mutex()
             : this(false, null, out s_dummyBool)
         {
         }
 
-        [System.Security.SecurityCritical]  // auto-generated
         private Mutex(SafeWaitHandle handle)
         {
             SafeWaitHandle = handle;
         }
 
-        [System.Security.SecurityCritical]  // auto-generated_required
         public static Mutex OpenExisting(string name)
         {
             Mutex result;
@@ -97,13 +92,11 @@ namespace System.Threading
             }
         }
 
-        [System.Security.SecurityCritical]  // auto-generated_required
         public static bool TryOpenExisting(string name, out Mutex result)
         {
             return OpenExistingWorker(name, out result) == OpenExistingResult.Success;
         }
 
-        [System.Security.SecurityCritical]
         private static OpenExistingResult OpenExistingWorker(string name, out Mutex result)
         {
             if (name == null)
@@ -129,16 +122,16 @@ namespace System.Threading
             // If that happens, ask for less permissions.
             SafeWaitHandle myHandle = new SafeWaitHandle(Interop.mincore.OpenMutex((uint)(Interop.Constants.MutexModifyState | Interop.Constants.Synchronize), false, name), true);
 
-            uint errorCode = 0;
+            int errorCode = 0;
             if (myHandle.IsInvalid)
             {
-                errorCode = Interop.mincore.GetLastError();
+                errorCode = (int)Interop.mincore.GetLastError();
 
-                if ((uint)Interop.Constants.ErrorFileNotFound == errorCode || (uint)Interop.Constants.ErrorInvalidName == errorCode)
+                if (Interop.mincore.Errors.ERROR_FILE_NOT_FOUND == errorCode || Interop.mincore.Errors.ERROR_INVALID_NAME == errorCode)
                     return OpenExistingResult.NameNotFound;
-                if ((uint)Interop.Constants.ErrorPathNotFound == errorCode)
+                if (Interop.mincore.Errors.ERROR_PATH_NOT_FOUND == errorCode)
                     return OpenExistingResult.PathNotFound;
-                if (null != name && 0 != name.Length && (uint)Interop.Constants.ErrorInvalidHandle == errorCode)
+                if (null != name && 0 != name.Length && Interop.mincore.Errors.ERROR_INVALID_HANDLE == errorCode)
                     return OpenExistingResult.NameInvalid;
 
                 // this is for passed through Win32Native Errors
@@ -152,7 +145,6 @@ namespace System.Threading
         // Note: To call ReleaseMutex, you must have an ACL granting you
         // MUTEX_MODIFY_STATE rights (0x0001).  The other interesting value
         // in a Mutex's ACL is MUTEX_ALL_ACCESS (0x1F0001).
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public void ReleaseMutex()
         {
             waitHandle.DangerousAddRef();
@@ -167,21 +159,20 @@ namespace System.Threading
             }
         }
 
-        [System.Security.SecurityCritical]  // auto-generated
-        private static uint CreateMutexHandle(bool initiallyOwned, String name, out SafeWaitHandle mutexHandle)
+        private static int CreateMutexHandle(bool initiallyOwned, String name, out SafeWaitHandle mutexHandle)
         {
-            uint errorCode;
+            int errorCode;
 
             while (true)
             {
                 mutexHandle = new SafeWaitHandle(Interop.mincore.CreateMutexEx(IntPtr.Zero, name, initiallyOwned ? (uint)Interop.Constants.CreateMutexInitialOwner : 0, (uint)Interop.Constants.MutexAllAccess), true);
-                errorCode = Interop.mincore.GetLastError();
+                errorCode = (int)Interop.mincore.GetLastError();
                 if (!mutexHandle.IsInvalid)
                 {
                     break;
                 }
 
-                if (errorCode == (uint)Interop.Constants.ErrorAccessDenied)
+                if (errorCode == Interop.mincore.Errors.ERROR_ACCESS_DENIED)
                 {
                     // If a mutex with the name already exists, OS will try to open it with FullAccess.
                     // It might fail if we don't have enough access. In that case, we try to open the mutex will modify and synchronize access.
@@ -189,20 +180,20 @@ namespace System.Threading
                     mutexHandle = new SafeWaitHandle(Interop.mincore.OpenMutex((uint)(Interop.Constants.MutexModifyState | Interop.Constants.Synchronize), false, name), true);
                     if (!mutexHandle.IsInvalid)
                     {
-                        errorCode = (uint)Interop.Constants.ErrorAlreadyExists;
+                        errorCode = Interop.mincore.Errors.ERROR_ALREADY_EXISTS;
                     }
                     else
                     {
-                        errorCode = Interop.mincore.GetLastError();
+                        errorCode = (int)Interop.mincore.GetLastError();
                     }
 
                     // There could be a race here, the other owner of the mutex can free the mutex,
                     // We need to retry creation in that case.
-                    if (errorCode != (uint)Interop.Constants.ErrorFileNotFound)
+                    if (errorCode != Interop.mincore.Errors.ERROR_FILE_NOT_FOUND)
                     {
-                        if (errorCode == (uint)Interop.Constants.ErrorSuccess)
+                        if (errorCode == Interop.mincore.Errors.ERROR_SUCCESS)
                         {
-                            errorCode = (uint)Interop.Constants.ErrorAlreadyExists;
+                            errorCode = Interop.mincore.Errors.ERROR_ALREADY_EXISTS;
                         }
                         break;
                     }

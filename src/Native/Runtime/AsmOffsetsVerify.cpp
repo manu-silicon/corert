@@ -1,12 +1,10 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
-#include "CommonTypes.h"
-#include "gcrhenvbase.h"
-#include "eventtrace.h"
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+#include "common.h"
+#include "gcenv.h"
 #include "gc.h"
-#include "assert.h"
+#include "rhassert.h"
 #include "RedhawkWarnings.h"
 #include "slist.h"
 #include "gcrhinterface.h"
@@ -14,17 +12,19 @@
 #include "regdisplay.h"
 #include "StackFrameIterator.h"
 #include "thread.h"
+#include "TargetPtrs.h"
 #include "rhbinder.h"
-#include "holder.h"
-#include "Crst.h"
 #include "RWLock.h"
 #include "RuntimeInstance.h"
 #include "CachedInterfaceDispatch.h"
+#include "shash.h"
 #include "module.h"
 #include "CallDescr.h"
 
 class AsmOffsets
 {
+    static_assert(sizeof(Thread::m_rgbAllocContextBuffer) >= sizeof(alloc_context), "Thread::m_rgbAllocContextBuffer is not big enough to hold an alloc_context");
+
 #define PLAT_ASM_OFFSET(offset, cls, member) \
     static_assert((offsetof(cls, member) == 0x##offset) || (offsetof(cls, member) > 0x##offset), "Bad asm offset for '" #cls "." #member "', the actual offset is smaller than 0x" #offset "."); \
     static_assert((offsetof(cls, member) == 0x##offset) || (offsetof(cls, member) < 0x##offset), "Bad asm offset for '" #cls "." #member "', the actual offset is larger than 0x" #offset ".");

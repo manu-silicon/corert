@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Runtime;
@@ -9,7 +10,10 @@ using System.Runtime.CompilerServices;
 
 using Internal.Runtime.Augments;
 using Internal.Reflection.Extensibility;
+
+#if ENABLE_REFLECTION_TRACE
 using Internal.Reflection.Tracing;
+#endif
 
 namespace Internal.Reflection.Core.NonPortable
 {
@@ -20,6 +24,8 @@ namespace Internal.Reflection.Core.NonPortable
     // Mostly, this sets many of the "flavor-specific" properties to return the desktop-compatible "error case" result. 
     // This minimizes the number of methods the subclasses must override.
     //
+
+    [DebuggerDisplay("{_debugName}")]
     public abstract class RuntimeType : ExtensibleType, IEquatable<RuntimeType>
     {
         protected RuntimeType()
@@ -60,8 +66,10 @@ namespace Internal.Reflection.Core.NonPortable
         {
             get
             {
+#if ENABLE_REFLECTION_TRACE
                 if (ReflectionTrace.Enabled)
                     ReflectionTrace.Type_AssemblyQualifiedName(this);
+#endif
 
                 String fullName = FullName;
                 if (fullName == null)   // Some Types (such as generic parameters) return null for FullName by design.
@@ -86,8 +94,10 @@ namespace Internal.Reflection.Core.NonPortable
         {
             get
             {
+#if ENABLE_REFLECTION_TRACE
                 if (ReflectionTrace.Enabled)
                     ReflectionTrace.Type_FullName(this);
+#endif
 
                 Debug.Assert(!IsConstructedGenericType);
                 Debug.Assert(!IsGenericParameter);
@@ -169,8 +179,10 @@ namespace Internal.Reflection.Core.NonPortable
 
         public sealed override Type MakeArrayType()
         {
+#if ENABLE_REFLECTION_TRACE
             if (ReflectionTrace.Enabled)
                 ReflectionTrace.Type_MakeArrayType(this);
+#endif
 
             // Do not implement this as a call to MakeArrayType(1) - they are not interchangable. MakeArrayType() returns a
             // vector type ("SZArray") while MakeArrayType(1) returns a multidim array of rank 1. These are distinct types
@@ -180,8 +192,10 @@ namespace Internal.Reflection.Core.NonPortable
 
         public sealed override Type MakeArrayType(int rank)
         {
+#if ENABLE_REFLECTION_TRACE
             if (ReflectionTrace.Enabled)
                 ReflectionTrace.Type_MakeArrayType(this);
+#endif
 
             if (rank <= 0)
                 throw new IndexOutOfRangeException();
@@ -195,8 +209,10 @@ namespace Internal.Reflection.Core.NonPortable
 
         public sealed override Type MakeGenericType(params Type[] instantiation)
         {
+#if ENABLE_REFLECTION_TRACE
             if (ReflectionTrace.Enabled)
                 ReflectionTrace.Type_MakeGenericType(this, instantiation);
+#endif
 
             if (instantiation == null)
                 throw new ArgumentNullException("instantiation");
@@ -232,8 +248,10 @@ namespace Internal.Reflection.Core.NonPortable
         {
             get
             {
+#if ENABLE_REFLECTION_TRACE
                 if (ReflectionTrace.Enabled)
                     ReflectionTrace.Type_Name(this);
+#endif
 
                 RuntimeType rootCauseForFailure = null;
                 String name = this.InternalGetNameIfAvailable(ref rootCauseForFailure);
@@ -423,16 +441,24 @@ namespace Internal.Reflection.Core.NonPortable
         //
         public void EstablishDebugName()
         {
+            bool populateDebugNames = DeveloperExperienceState.DeveloperExperienceModeEnabled;
 #if DEBUG
+            populateDebugNames = true;
+#endif
+            if (!populateDebugNames)
+                return;
+
             if (_debugName == null)
             {
                 _debugName = "Constructing..."; // Protect against any inadvertent reentrancy.
                 String debugName;
+#if ENABLE_REFLECTION_TRACE
                 if (ReflectionTrace.Enabled)
                 {
                     debugName = this.GetTraceString();  // If tracing on, call this.GetTraceString() which only gives you useful strings when metadata is available but doesn't pollute the ETW trace.
                 }
                 else
+#endif
                 {
                     debugName = this.ToString();
                 }
@@ -440,15 +466,12 @@ namespace Internal.Reflection.Core.NonPortable
                     debugName = "";
                 _debugName = debugName;
             }
-#endif
             return;
         }
 
         private volatile Object _lazyRuntimeTypeInfo;  // This is actually a RuntimeTypeInfo.
 
-#if DEBUG
         private String _debugName;
-#endif
     }
 }
 

@@ -1,16 +1,17 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 
 namespace Internal.TypeSystem
 {
-    public sealed class MethodForInstantiatedType : MethodDesc
+    public sealed partial class MethodForInstantiatedType : MethodDesc
     {
-        MethodDesc _typicalMethodDef;
-        InstantiatedType _instantiatedType;
+        private MethodDesc _typicalMethodDef;
+        private InstantiatedType _instantiatedType;
 
-        MethodSignature _signature;
+        private MethodSignature _signature;
 
         internal MethodForInstantiatedType(MethodDesc typicalMethodDef, InstantiatedType instantiatedType)
         {
@@ -34,7 +35,7 @@ namespace Internal.TypeSystem
             }
         }
 
-        TypeDesc Instantiate(TypeDesc type)
+        private TypeDesc Instantiate(TypeDesc type)
         {
             return type.InstantiateSignature(_instantiatedType.Instantiation, new Instantiation());
         }
@@ -113,6 +114,5 @@ namespace Internal.TypeSystem
         {
             return OwningType.ToString() + "." + Name;
         }
-
     }
 }

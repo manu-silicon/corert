@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Diagnostics.Contracts;
@@ -25,7 +26,6 @@ namespace System.Text
         // GetByteCount
         // Note: We start by assuming that the output will be the same as count.  Having
         // an encoder or fallback may change that assumption
-        [System.Security.SecurityCritical]  // auto-generated
         internal override unsafe int GetByteCount(char* chars, int charCount, EncoderNLS encoder)
         {
             // Just need to ASSERT, this is called by something else internal that checked parameters already
@@ -141,7 +141,6 @@ namespace System.Text
             return byteCount;
         }
 
-        [System.Security.SecurityCritical]  // auto-generated
         internal override unsafe int GetBytes(char* chars, int charCount,
                                                 byte* bytes, int byteCount, EncoderNLS encoder)
         {
@@ -356,7 +355,6 @@ namespace System.Text
         }
 
         // This is internal and called by something else,
-        [System.Security.SecurityCritical]  // auto-generated
         internal override unsafe int GetCharCount(byte* bytes, int count, DecoderNLS decoder)
         {
             // Just assert, we're called internally so these should be safe, checked already
@@ -368,7 +366,6 @@ namespace System.Text
             return count;
         }
 
-        [System.Security.SecurityCritical]  // auto-generated
         internal override unsafe int GetChars(byte* bytes, int byteCount,
                                                 char* chars, int charCount, DecoderNLS decoder)
         {

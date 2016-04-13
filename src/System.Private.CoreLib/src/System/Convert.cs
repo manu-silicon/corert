@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*============================================================
 **
@@ -127,7 +128,7 @@ namespace System
 
             if (value == null)
             {
-                if (conversionType.TypeHandle.EEType.IsValueType)
+                if (conversionType.TypeHandle.ToEETypePtr().IsValueType)
                 {
                     throw new InvalidCastException(SR.InvalidCast_CannotCastNullToValueType);
                 }
@@ -2290,7 +2291,6 @@ namespace System
         }
 
         // Convert the byte value to a string in base fromBase
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public static String ToString(byte value, int toBase)
         {
             if (toBase != 2 && toBase != 8 && toBase != 10 && toBase != 16)
@@ -2302,7 +2302,6 @@ namespace System
         }
 
         // Convert the Int16 value to a string in base fromBase
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public static String ToString(short value, int toBase)
         {
             if (toBase != 2 && toBase != 8 && toBase != 10 && toBase != 16)
@@ -2314,7 +2313,6 @@ namespace System
         }
 
         // Convert the Int32 value to a string in base toBase
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public static String ToString(int value, int toBase)
         {
             if (toBase != 2 && toBase != 8 && toBase != 10 && toBase != 16)
@@ -2326,7 +2324,6 @@ namespace System
         }
 
         // Convert the Int64 value to a string in base toBase
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public static String ToString(long value, int toBase)
         {
             if (toBase != 2 && toBase != 8 && toBase != 10 && toBase != 16)
@@ -2365,7 +2362,6 @@ namespace System
             return ToBase64String(inArray, offset, length, Base64FormattingOptions.None);
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         [System.Runtime.InteropServices.ComVisible(false)]
         internal static unsafe String ToBase64String(byte[] inArray, int offset, int length, Base64FormattingOptions options)
         {
@@ -2416,7 +2412,6 @@ namespace System
             return ToBase64CharArray(inArray, offsetIn, length, outArray, offsetOut, Base64FormattingOptions.None);
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         [System.Runtime.InteropServices.ComVisible(false)]
         internal static unsafe int ToBase64CharArray(byte[] inArray, int offsetIn, int length, char[] outArray, int offsetOut, Base64FormattingOptions options)
         {
@@ -2476,7 +2471,6 @@ namespace System
             return retVal;
         }
 
-        [System.Security.SecurityCritical]  // auto-generated
         private static unsafe int ConvertToBase64Array(char* outChars, byte* inData, int offset, int length, bool insertLineBreaks)
         {
             int lengthmod3 = length % 3;
@@ -2571,7 +2565,6 @@ namespace System
         /// </summary>
         /// <param name="s">The string to convert</param>
         /// <returns>The array of bytes represented by the specifed Base64 string.</returns>
-        [SecuritySafeCritical]
         public static Byte[] FromBase64String(String s)
         {
             // "s" is an unfortunate parameter name, but we need to keep it for backward compat.
@@ -2598,7 +2591,6 @@ namespace System
         /// <param name="offset">A position within the input array.</param>
         /// <param name="length">Number of element to convert.</param>
         /// <returns>The array of bytes represented by the specified Base64 encoding characters.</returns>
-        [SecuritySafeCritical]
         public static Byte[] FromBase64CharArray(Char[] inArray, Int32 offset, Int32 length)
         {
             if (inArray == null)
@@ -2635,7 +2627,6 @@ namespace System
         /// <param name="inputPtr">Pointer to the first input char</param>
         /// <param name="inputLength">Number of input chars</param>
         /// <returns></returns>
-        [SecurityCritical]
         private static unsafe Byte[] FromBase64CharPtr(Char* inputPtr, Int32 inputLength)
         {
             // The validity of parameters much be checked by callers, thus we are Critical here.
@@ -2689,7 +2680,6 @@ namespace System
         /// <param name="destLength">Max length of the preallocated result buffer</param>
         /// <returns>If the result buffer was not large enough to write all result bytes, return -1;
         /// Otherwise return the number of result bytes actually produced.</returns>
-        [SecurityCritical]
         private static unsafe Int32 FromBase64_Decode(Char* startInputPtr, Int32 inputLength, Byte* startDestPtr, Int32 destLength)
         {
             // You may find this method weird to look at. It’s written for performance, not aesthetics.
@@ -2875,7 +2865,6 @@ namespace System
         /// Walk the entire input counting white spaces and padding chars, then compute result length
         /// based on 3 bytes per 4 chars.
         /// </summary>
-        [SecurityCritical]
         private static unsafe Int32 FromBase64_ComputeResultLength(Char* inputPtr, Int32 inputLength)
         {
             const UInt32 intEq = (UInt32)'=';

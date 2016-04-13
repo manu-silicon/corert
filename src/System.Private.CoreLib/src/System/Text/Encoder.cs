@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Text;
 using System;
@@ -112,7 +113,6 @@ namespace System.Text
         // We expect this to be the workhorse for NLS encodings
         // unfortunately for existing overrides, it has to call the [] version,
         // which is really slow, so avoid this method if you might be calling external encodings.
-        [System.Security.SecurityCritical]  // auto-generated
         [CLSCompliant(false)]
         [System.Runtime.InteropServices.ComVisible(false)]
         public virtual unsafe int GetByteCount(char* chars, int count, bool flush)
@@ -174,7 +174,6 @@ namespace System.Text
         // the byte[] to our byte* output buffer.  If the result count was wrong, we
         // could easily overflow our output buffer.  Therefore we do an extra test
         // when we copy the buffer so that we don't overflow byteCount either.
-        [System.Security.SecurityCritical]  // auto-generated
         [System.Runtime.InteropServices.ComVisible(false)]
         internal virtual unsafe int GetBytes(char* chars, int charCount,
                                               byte* bytes, int byteCount, bool flush)

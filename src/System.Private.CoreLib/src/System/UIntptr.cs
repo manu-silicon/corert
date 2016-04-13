@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*============================================================
 **
@@ -47,7 +48,6 @@ namespace System
         }
 
         [Intrinsic]
-        [SecurityCritical] // required to match contract
         [NonVersionable]
         public unsafe UIntPtr(void* value)
         {
@@ -94,7 +94,6 @@ namespace System
         }
 
         [Intrinsic]
-        [SecurityCritical] // required to match contract
         [NonVersionable]
         public static unsafe explicit operator UIntPtr(void* value)
         {
@@ -102,7 +101,6 @@ namespace System
         }
 
         [Intrinsic]
-        [SecurityCritical] // required to match contract
         [NonVersionable]
         public static unsafe explicit operator void* (UIntPtr value)
         {
@@ -175,8 +173,12 @@ namespace System
 
         public unsafe override int GetHashCode()
         {
-            // QUESTION: This HashCode seems to neglect the high order bits in calculating the hashcode?
-            return unchecked((int)((long)_value)) & 0x7fffffff;
+#if BIT64
+            ulong l = (ulong)_value;
+            return (unchecked((int)l) ^ (int)(l >> 32));
+#else
+            return unchecked((int)_value);
+#endif
         }
 
         [NonVersionable]

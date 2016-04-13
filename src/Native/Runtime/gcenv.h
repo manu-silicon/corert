@@ -1,10 +1,19 @@
-//
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 #define FEATURE_PREMORTEM_FINALIZATION
 
+#ifdef _MSC_VER
+#pragma warning( disable: 4189 )  // 'hp': local variable is initialized but not referenced -- common in GC
+#pragma warning( disable: 4127 )  // conditional expression is constant -- common in GC
+#endif
+
+#include "sal.h"
+#include "gcenv.structs.h"
+#include "gcenv.os.h"
+#include "gcenv.interlocked.h"
 #include "gcenv.base.h"
+#include "gcenv.ee.h"
 
 #include "Crst.h"
 #include "event.h"
@@ -14,6 +23,47 @@
 #include "TargetPtrs.h"
 #include "eetype.h"
 #include "ObjectLayout.h"
+#include "rheventtrace.h"
+#include "PalRedhawkCommon.h"
+#include "PalRedhawk.h"
+#include "gcrhinterface.h"
+#include "gcenv.interlocked.inl"
+
+#ifdef FEATURE_ETW
+
+    // @TODO: ETW update required -- placeholders
+    #define FireEtwGCPerHeapHistory_V3(ClrInstanceID, FreeListAllocated, FreeListRejected, EndOfSegAllocated, CondemnedAllocated, PinnedAllocated, PinnedAllocatedAdvance, RunningFreeListEfficiency, CondemnReasons0, CondemnReasons1, CompactMechanisms, ExpandMechanisms, HeapIndex, ExtraGen0Commit, Count, Values_Len_, Values) 0
+    #define FireEtwGCGlobalHeapHistory_V2(FinalYoungestDesired, NumHeaps, CondemnedGeneration, Gen0ReductionCount, Reason, GlobalMechanisms, ClrInstanceID, PauseMode, MemoryPressure) 0
+    #define FireEtwGCMarkWithType(HeapNum, ClrInstanceID, Type, Bytes) {HeapNum;ClrInstanceID;Type;Bytes;}
+    #define FireEtwPinPlugAtGCTime(PlugStart, PlugEnd, GapBeforeSize, ClrInstanceID) 0
+    #define FireEtwGCTriggered(Reason, ClrInstanceID) 0
+
+    #ifndef _INC_WINDOWS
+        typedef void* LPVOID;
+        typedef uint32_t UINT;
+        typedef void* PVOID;
+        typedef uint64_t ULONGLONG;
+        typedef uint32_t ULONG;
+        typedef int64_t LONGLONG;
+        typedef uint8_t BYTE;
+        typedef uint16_t UINT16;
+    #endif // _INC_WINDOWS
+
+    #include "etwevents.h"
+    #include "eventtrace.h"
+
+#else // FEATURE_ETW
+
+    #include "etmdummy.h"
+    #define ETW_EVENT_ENABLED(e,f) false
+
+#endif // FEATURE_ETW
+
+#define MAX_LONGPATH 1024
+
+#ifndef YieldProcessor
+#define YieldProcessor PalYieldProcessor
+#endif
 
 // Adapter for GC's view of Array
 class ArrayBase : Array
@@ -24,7 +74,7 @@ public:
         return m_Length;
     }
 
-    static SIZE_T GetOffsetOfNumComponents()
+    static size_t GetOffsetOfNumComponents()
     {
         return offsetof(ArrayBase, m_Length);
     }
@@ -61,17 +111,14 @@ public:
     UInt32 GetRequiredAlignment() const { return sizeof(void*); }
 #endif // FEATURE_BARTOK
 #endif // FEATURE_STRUCTALIGN
+    bool RequiresAlign8() { return ((EEType*)this)->RequiresAlign8(); }
+    bool IsValueType() { return ((EEType*)this)->get_IsValueType(); }
     UInt32_BOOL SanityCheck() { return ((EEType*)this)->Validate(); }
-    // TODO: remove this method after the __isinst_class is gone
-    MethodTable* GetParent()
-    {
-        return (MethodTable*)((EEType*)this)->get_BaseType();
-    }
 };
 
 class EEConfig
 {
-    BYTE m_gcStressMode;
+    UInt8 m_gcStressMode;
 
 public:
     enum HeapVerifyFlags {
@@ -119,15 +166,21 @@ public:
     bool    IsHeapVerifyEnabled()                 { return GetHeapVerifyLevel() != 0; }
 
     GCStressFlags GetGCStressLevel()        const { return (GCStressFlags) m_gcStressMode; }
-    void    SetGCStressLevel(int val)             { m_gcStressMode = (BYTE) val;}
+    void    SetGCStressLevel(int val)             { m_gcStressMode = (UInt8) val;}
     bool    IsGCStressMix()                 const { return false; }
 
     int     GetGCtraceStart()               const { return 0; }
-    int     GetGCtraceEnd  ()               const { return 0; }//1000000000; }
+    int     GetGCtraceEnd  ()               const { return 1000000000; }
     int     GetGCtraceFac  ()               const { return 0; }
     int     GetGCprnLvl    ()               const { return 0; }
     bool    IsGCBreakOnOOMEnabled()         const { return false; }
+#ifdef CORERT
+    // CORERT-TODO: remove this
+    //              https://github.com/dotnet/corert/issues/913
+    int     GetGCgen0size  ()               const { return 100 * 1024 * 1024; }
+#else
     int     GetGCgen0size  ()               const { return 0; }
+#endif
     void    SetGCgen0size  (int iSize)            { UNREFERENCED_PARAMETER(iSize); }
     int     GetSegmentSize ()               const { return 0; }
     void    SetSegmentSize (int iSize)            { UNREFERENCED_PARAMETER(iSize); }
@@ -158,7 +211,7 @@ class SyncBlockCache
 {
 public:
     static SyncBlockCache *GetSyncBlockCache() { return &g_sSyncBlockCache; }
-    void GCWeakPtrScan(void *pCallback, LPARAM pCtx, int dummy)
+    void GCWeakPtrScan(void *pCallback, uintptr_t pCtx, int dummy)
     {
         UNREFERENCED_PARAMETER(pCallback);
         UNREFERENCED_PARAMETER(pCtx);
@@ -192,18 +245,16 @@ extern UInt32 g_uiShutdownFinalizationTimeout;
 extern bool g_fShutdownHasStarted;
 
 
-#ifdef DACCESS_COMPILE
 
-// The DAC uses DebuggerEnumGcRefContext in place of a GCCONTEXT when doing reference
-// enumeration. The GC passes through additional data in the ScanContext which the debugger
-// neither has nor needs. While we could refactor the GC code to make an interface
-// with less coupling, that might affect perf or make integration messier. Instead
-// we use some typedefs so DAC and runtime can get strong yet distinct types.
 
-typedef Thread::ScanCallbackData EnumGcRefScanContext;
-typedef void EnumGcRefCallbackFunc(PTR_PTR_Object, EnumGcRefScanContext* callbackData, DWORD flags);
+EXTERN_C UInt32 _tls_index;
+inline UInt16 GetClrInstanceId()
+{
+    return (UInt16)_tls_index;
+}
 
-#else
-typedef promote_func EnumGcRefCallbackFunc;
-typedef ScanContext  EnumGcRefScanContext;
-#endif
+class GCHeap;
+typedef DPTR(GCHeap) PTR_GCHeap;
+typedef DPTR(uint32_t) PTR_uint32_t;
+
+enum CLRDataEnumMemoryFlags : int;

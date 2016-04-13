@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //-------------------------------------------------------------------------------------------------
 //
@@ -19,15 +18,15 @@
 class ObjHeader
 {
 private:
-#if defined(_WIN64)
+#if defined(BIT64)
     uint32_t m_uAlignpad;
-#endif // _WIN64
+#endif // BIT64
     uint32_t m_uSyncBlockValue;
 
 public:
     uint32_t GetBits() { return m_uSyncBlockValue; }
-    void SetBit(uint32_t uBit) { FastInterlockOr(&m_uSyncBlockValue, uBit); }
-    void ClrBit(uint32_t uBit) { FastInterlockAnd(&m_uSyncBlockValue, ~uBit); }
+    void SetBit(uint32_t uBit) { Interlocked::Or(&m_uSyncBlockValue, uBit); }
+    void ClrBit(uint32_t uBit) { Interlocked::And(&m_uSyncBlockValue, ~uBit); }
     void SetGCBit() { m_uSyncBlockValue |= BIT_SBLK_GC_RESERVE; }
     void ClrGCBit() { m_uSyncBlockValue &= ~BIT_SBLK_GC_RESERVE; }
 };
@@ -130,19 +129,19 @@ public:
         m_pMethTab = pMT;
     }
 };
-#define MIN_OBJECT_SIZE     (2*sizeof(BYTE*) + sizeof(ObjHeader))
+#define MIN_OBJECT_SIZE     (2*sizeof(uint8_t*) + sizeof(ObjHeader))
 
 class ArrayBase : public Object
 {
-    DWORD m_dwLength;
+    uint32_t m_dwLength;
 
 public:
-    DWORD GetNumComponents()
+    uint32_t GetNumComponents()
     {
         return m_dwLength;
     }
 
-    static SIZE_T GetOffsetOfNumComponents()
+    static size_t GetOffsetOfNumComponents()
     {
         return offsetof(ArrayBase, m_dwLength);
     }

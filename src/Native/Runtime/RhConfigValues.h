@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //
 // Definitions of each configuration value used by the RhConfig class.
@@ -12,7 +11,9 @@
 // very few configuration values are exposed in this manner.
 //
 
-DEBUG_CONFIG_VALUE(BreakOnAssert)
+// By default, print assert to console and break in the debugger, if attached.  Set to 0 for a pop-up dialog on assert.
+DEBUG_CONFIG_VALUE_WITH_DEFAULT(BreakOnAssert, 1) 
+
 RETAIL_CONFIG_VALUE(HeapVerify)
 RETAIL_CONFIG_VALUE(StressLogLevel)
 RETAIL_CONFIG_VALUE(TotalStressLogSize)

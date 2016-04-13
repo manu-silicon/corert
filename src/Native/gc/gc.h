@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 
 /*++
@@ -37,7 +36,7 @@ typedef gc_heap_segment_stub *segment_handle;
 
 struct segment_info
 {
-    LPVOID pvMem; // base of the allocation, not the first object (must add ibFirstObject)
+    void * pvMem; // base of the allocation, not the first object (must add ibFirstObject)
     size_t ibFirstObject;   // offset to the base of the first object in the segment
     size_t ibAllocated; // limit of allocated memory in the segment (>= firstobject)
     size_t ibCommit; // limit of committed memory in the segment (>= alllocated)
@@ -89,8 +88,8 @@ struct oom_history
 {
     oom_reason reason;
     size_t alloc_size;
-    BYTE* reserved;
-    BYTE* allocated;
+    uint8_t* reserved;
+    uint8_t* allocated;
     size_t gc_index;
     failure_get_memory fgm;
     size_t size;
@@ -117,9 +116,9 @@ GARY_DECL(size_t, gc_global_mechanisms, MAX_GLOBAL_GC_MECHANISMS_COUNT);
 #ifndef DACCESS_COMPILE
 extern "C" {
 #endif
-GPTR_DECL(BYTE,g_lowest_address);
-GPTR_DECL(BYTE,g_highest_address);
-GPTR_DECL(DWORD,g_card_table);
+GPTR_DECL(uint8_t,g_lowest_address);
+GPTR_DECL(uint8_t,g_highest_address);
+GPTR_DECL(uint32_t,g_card_table);
 #ifndef DACCESS_COMPILE
 }
 #endif
@@ -134,16 +133,16 @@ class DacHeapWalker;
 
 #ifdef WRITE_BARRIER_CHECK
 //always defined, but should be 0 in Server GC
-extern BYTE* g_GCShadow;
-extern BYTE* g_GCShadowEnd;
+extern uint8_t* g_GCShadow;
+extern uint8_t* g_GCShadowEnd;
 // saves the g_lowest_address in between GCs to verify the consistency of the shadow segment
-extern BYTE* g_shadow_lowest_address;
+extern uint8_t* g_shadow_lowest_address;
 #endif
 
 #define MP_LOCKS
 
-extern "C" BYTE* g_ephemeral_low;
-extern "C" BYTE* g_ephemeral_high;
+extern "C" uint8_t* g_ephemeral_low;
+extern "C" uint8_t* g_ephemeral_high;
 
 namespace WKS {
     ::GCHeap* CreateGCHeap();
@@ -173,10 +172,10 @@ struct alloc_context
 #endif // defined(FEATURE_SVR_GC)
     friend struct ClassDumpInfo;
 
-    BYTE*          alloc_ptr;
-    BYTE*          alloc_limit;
-    INT64          alloc_bytes; //Number of bytes allocated on SOH by this context
-    INT64          alloc_bytes_loh; //Number of bytes allocated on LOH by this context
+    uint8_t*       alloc_ptr;
+    uint8_t*       alloc_limit;
+    int64_t        alloc_bytes; //Number of bytes allocated on SOH by this context
+    int64_t        alloc_bytes_loh; //Number of bytes allocated on LOH by this context
 #if defined(FEATURE_SVR_GC)
     SVR::GCHeap*   alloc_heap;
     SVR::GCHeap*   home_heap;
@@ -204,15 +203,18 @@ struct ScanContext
 {
     Thread* thread_under_crawl;
     int thread_number;
+    uintptr_t stack_limit; // Lowest point on the thread stack that the scanning logic is permitted to read
     BOOL promotion; //TRUE: Promotion, FALSE: Relocation.
     BOOL concurrent; //TRUE: concurrent scanning 
 #if CHECK_APP_DOMAIN_LEAKS || defined (FEATURE_APPDOMAIN_RESOURCE_MONITORING) || defined (DACCESS_COMPILE)
     AppDomain *pCurrentDomain;
 #endif //CHECK_APP_DOMAIN_LEAKS || FEATURE_APPDOMAIN_RESOURCE_MONITORING || DACCESS_COMPILE
 
+#ifndef FEATURE_REDHAWK
 #if defined(GC_PROFILING) || defined (DACCESS_COMPILE)
     MethodDesc *pMD;
 #endif //GC_PROFILING || DACCESS_COMPILE
+#endif // FEATURE_REDHAWK
 #if defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
     EtwGCRootKind dwEtwRootKind;
 #endif // GC_PROFILING || FEATURE_EVENT_TRACE
@@ -223,6 +225,7 @@ struct ScanContext
 
         thread_under_crawl = 0;
         thread_number = -1;
+        stack_limit = 0;
         promotion = FALSE;
         concurrent = FALSE;
 #ifdef GC_PROFILING
@@ -235,13 +238,13 @@ struct ScanContext
 };
 
 typedef BOOL (* walk_fn)(Object*, void*);
-typedef void (* gen_walk_fn)(void *context, int generation, BYTE *range_start, BYTE * range_end, BYTE *range_reserved);
+typedef void (* gen_walk_fn)(void *context, int generation, uint8_t *range_start, uint8_t * range_end, uint8_t *range_reserved);
 
 #if defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
 struct ProfilingScanContext : ScanContext
 {
     BOOL fProfilerPinned;
-    LPVOID pvEtwContext;
+    void * pvEtwContext;
     void *pHeapId;
     
     ProfilingScanContext(BOOL fProfilerPinnedParam) : ScanContext()
@@ -252,7 +255,7 @@ struct ProfilingScanContext : ScanContext
         fProfilerPinned = fProfilerPinnedParam;
         pvEtwContext = NULL;
 #ifdef FEATURE_CONSERVATIVE_GC
-        // To not confuse CNameSpace::GcScanRoots
+        // To not confuse GCScan::GcScanRoots
         promotion = g_pConfig->GetGCConservative();
 #endif
     }
@@ -344,8 +347,8 @@ enum changed_seg_state
     seg_added
 };
 
-void record_changed_seg (BYTE* start, BYTE* end, 
-                         size_t current_gc_index, 
+void record_changed_seg (uint8_t* start, uint8_t* end,
+                         size_t current_gc_index,
                          bgc_state current_bgc_state,
                          changed_seg_state changed_state);
 
@@ -363,6 +366,7 @@ void record_global_mechanism (int mech_index);
 #define GC_ALLOC_FINALIZE 0x1
 #define GC_ALLOC_CONTAINS_REF 0x2
 #define GC_ALLOC_ALIGN8_BIAS 0x4
+#define GC_ALLOC_ALIGN8 0x8
 
 class GCHeap {
     friend struct ::_DacGlobals;
@@ -433,6 +437,7 @@ public:
         }
 #endif
 #else // FEATURE_SVR_GC
+        UNREFERENCED_PARAMETER(bServerHeap);
         CONSISTENCY_CHECK(bServerHeap == false);
 #endif // FEATURE_SVR_GC
     }
@@ -511,13 +516,13 @@ private:
     } GC_HEAP_TYPE;
     
 #ifdef FEATURE_SVR_GC
-    SVAL_DECL(DWORD,gcHeapType);
+    SVAL_DECL(uint32_t,gcHeapType);
 #endif // FEATURE_SVR_GC
 
 public:
         // TODO Synchronization, should be moved out
     virtual BOOL    IsGCInProgressHelper (BOOL bConsiderGCStart = FALSE) = 0;
-    virtual DWORD    WaitUntilGCComplete (BOOL bConsiderGCStart = FALSE) = 0;
+    virtual uint32_t    WaitUntilGCComplete (BOOL bConsiderGCStart = FALSE) = 0;
     virtual void SetGCInProgress(BOOL fInProgress) = 0;
     virtual CLREventStatic * GetWaitForGCEvent() = 0;
 
@@ -542,7 +547,7 @@ public:
     virtual BOOL IsConcurrentGCEnabled() = 0;
 
     virtual void FixAllocContext (alloc_context* acontext, BOOL lockp, void* arg, void *heap) = 0;
-    virtual Object* Alloc (alloc_context* acontext, size_t size, DWORD flags) = 0;
+    virtual Object* Alloc (alloc_context* acontext, size_t size, uint32_t flags) = 0;
 
     // This is safe to call only when EE is suspended.
     virtual Object* GetContainingObject(void *pInteriorPtr) = 0;
@@ -551,15 +556,15 @@ public:
     virtual HRESULT Initialize () = 0;
 
     virtual HRESULT GarbageCollect (int generation = -1, BOOL low_memory_p=FALSE, int mode = collection_blocking) = 0;
-    virtual Object*  Alloc (size_t size, DWORD flags) = 0;
+    virtual Object*  Alloc (size_t size, uint32_t flags) = 0;
 #ifdef FEATURE_64BIT_ALIGNMENT
-    virtual Object*  AllocAlign8 (size_t size, DWORD flags) = 0;
-    virtual Object*  AllocAlign8 (alloc_context* acontext, size_t size, DWORD flags) = 0;
+    virtual Object*  AllocAlign8 (size_t size, uint32_t flags) = 0;
+    virtual Object*  AllocAlign8 (alloc_context* acontext, size_t size, uint32_t flags) = 0;
 private:
-    virtual Object*  AllocAlign8Common (void* hp, alloc_context* acontext, size_t size, DWORD flags) = 0;
+    virtual Object*  AllocAlign8Common (void* hp, alloc_context* acontext, size_t size, uint32_t flags) = 0;
 public:
 #endif // FEATURE_64BIT_ALIGNMENT
-    virtual Object*  AllocLHeap (size_t size, DWORD flags) = 0;
+    virtual Object*  AllocLHeap (size_t size, uint32_t flags) = 0;
     virtual void     SetReservedVMLimit (size_t vmlimit) = 0;
     virtual void SetCardsAfterBulkCopy( Object**, size_t ) = 0;
 #if defined(GC_PROFILING) || defined(FEATURE_EVENT_TRACE)
@@ -588,13 +593,13 @@ public:
     virtual int GetLOHCompactionMode() = 0;
     virtual void SetLOHCompactionMode(int newLOHCompactionyMode) = 0;
 
-    virtual BOOL RegisterForFullGCNotification(DWORD gen2Percentage, 
-                                               DWORD lohPercentage) = 0;
+    virtual BOOL RegisterForFullGCNotification(uint32_t gen2Percentage,
+                                               uint32_t lohPercentage) = 0;
     virtual BOOL CancelFullGCNotification() = 0;
     virtual int WaitForFullGCApproach(int millisecondsTimeout) = 0;
     virtual int WaitForFullGCComplete(int millisecondsTimeout) = 0;
 
-    virtual int StartNoGCRegion(ULONGLONG totalSize, BOOL lohSizeKnown, ULONGLONG lohSize, BOOL disallowFullBlockingGC) = 0;
+    virtual int StartNoGCRegion(uint64_t totalSize, BOOL lohSizeKnown, uint64_t lohSize, BOOL disallowFullBlockingGC) = 0;
     virtual int EndNoGCRegion() = 0;
 
     virtual BOOL IsObjectInFixedHeap(Object *pObj) = 0;
@@ -606,10 +611,16 @@ public:
     virtual unsigned GetGcCount() = 0;
     virtual void TraceGCSegments() = 0;
 
-    virtual void PublishObject(BYTE* obj) = 0;
+    virtual void PublishObject(uint8_t* obj) = 0;
 
     // static if since restricting for all heaps is fine
     virtual size_t GetValidSegmentSize(BOOL large_seg = FALSE) = 0;
+
+    static BOOL IsLargeObject(MethodTable *mt) {
+        WRAPPER_NO_CONTRACT;
+
+        return mt->GetBaseSize() >= LARGE_OBJECT_SIZE;
+    }
 
     static unsigned GetMaxGeneration() {
         LIMITED_METHOD_DAC_CONTRACT;  
@@ -660,13 +671,13 @@ public:
 #endif //VERIFY_HEAP    
 };
 
-extern VOLATILE(LONG) m_GCLock;
+extern VOLATILE(int32_t) m_GCLock;
 
 // Go through and touch (read) each page straddled by a memory block.
-void TouchPages(LPVOID pStart, UINT cb);
+void TouchPages(void * pStart, size_t cb);
 
 // For low memory notification from host
-extern LONG g_bLowMemoryFromHost;
+extern int32_t g_bLowMemoryFromHost;
 
 #ifdef WRITE_BARRIER_CHECK
 void updateGCShadow(Object** ptr, Object* val);

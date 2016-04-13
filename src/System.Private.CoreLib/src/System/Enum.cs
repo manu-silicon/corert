@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System.Text;
 using System.Runtime;
@@ -162,7 +163,7 @@ namespace System
             }
             else
             {
-                if (value.EETypePtr != enumInfo.UnderlyingType.TypeHandle.EEType)
+                if (value.EETypePtr != enumInfo.UnderlyingType.TypeHandle.ToEETypePtr())
                     throw new ArgumentException(SR.Format(SR.Arg_EnumFormatUnderlyingTypeAndObjectMustBeSameType, value.GetType().ToString(), enumInfo.UnderlyingType.ToString()));
             }
 
@@ -388,7 +389,7 @@ namespace System
                 // Try to see if its one of the enum values, then we return a String back else the value
                 String name = GetNameIfAny(enumInfo, rawValue);
                 if (name == null)
-                    return DoFormatD(rawValue, enumInfo.UnderlyingType.TypeHandle.EEType.CorElementType);
+                    return DoFormatD(rawValue, enumInfo.UnderlyingType.TypeHandle.ToEETypePtr().CorElementType);
                 else
                     return name;
             }
@@ -436,7 +437,7 @@ namespace System
 
             // We were unable to represent this number as a bitwise or of valid flags
             if (result != 0)
-                return DoFormatD(rawValue, enumInfo.UnderlyingType.TypeHandle.EEType.CorElementType);
+                return DoFormatD(rawValue, enumInfo.UnderlyingType.TypeHandle.ToEETypePtr().CorElementType);
 
             // For the case when we have zero
             if (rawValue == 0)
@@ -520,7 +521,7 @@ namespace System
                 throw new ArgumentNullException("enumType");
 
             RuntimeTypeHandle runtimeTypeHandle = enumType.TypeHandle;
-            EETypePtr eeType = runtimeTypeHandle.EEType;
+            EETypePtr eeType = runtimeTypeHandle.ToEETypePtr();
             if (!eeType.IsEnum)
                 throw new ArgumentException(SR.Arg_MustBeEnum, "enumType");
 
@@ -557,7 +558,7 @@ namespace System
                 throw new ArgumentNullException("enumType");
             Array values = GetEnumInfo(enumType).Values;
             int count = values.Length;
-            EETypePtr enumArrayType = enumType.MakeArrayType().TypeHandle.EEType;
+            EETypePtr enumArrayType = enumType.MakeArrayType().TypeHandle.ToEETypePtr();
             Array result = RuntimeImports.RhNewArray(enumArrayType, count);
             Array.CopyImplValueTypeArrayNoInnerGcRefs(values, 0, result, 0, count);
             return result;
@@ -604,7 +605,7 @@ namespace System
             if (value == null)
                 throw new ArgumentNullException("value");
 
-            if (value.EETypePtr == typeof(string).TypeHandle.EEType)
+            if (value.EETypePtr == EETypePtr.EETypePtrOf<string>())
             {
                 EnumInfo enumInfo = GetEnumInfo(enumType);
                 foreach (KeyValuePair<String, ulong> kv in enumInfo.NamesAndValues)
@@ -634,7 +635,7 @@ namespace System
                 else
                 {
                     enumInfo = GetEnumInfo(enumType);
-                    if (!(enumInfo.UnderlyingType.TypeHandle.EEType == value.EETypePtr))
+                    if (!(enumInfo.UnderlyingType.TypeHandle.ToEETypePtr() == value.EETypePtr))
                         throw new ArgumentException(SR.Format(SR.Arg_EnumUnderlyingTypeAndObjectMustBeSameType, value.GetType(), enumInfo.UnderlyingType));
                 }
 
@@ -664,7 +665,7 @@ namespace System
             if (enumType == null)
                 throw new ArgumentNullException("enumType");
 
-            if (!enumType.TypeHandle.EEType.IsEnum)
+            if (!enumType.TypeHandle.ToEETypePtr().IsEnum)
                 throw new ArgumentException(SR.Arg_MustBeEnum, "enumType");
 
             if (value == null)
@@ -678,7 +679,7 @@ namespace System
             if (value.EETypePtr.IsEnum && !ValueTypeMatchesEnumType(enumType, value))
                 throw new ArgumentException(SR.Format(SR.Arg_EnumAndObjectMustBeSameType, value.GetType(), enumType));
 
-            EETypePtr enumEEType = enumType.TypeHandle.EEType;
+            EETypePtr enumEEType = enumType.TypeHandle.ToEETypePtr();
             return RuntimeImports.RhBox(enumEEType, &rawValue);  //@todo: Not big-endian compatible.
         }
 
@@ -757,7 +758,7 @@ namespace System
         private static EnumInfo GetEnumInfoIfAvailable(Type enumType)
         {
             RuntimeTypeHandle runtimeTypeHandle = enumType.TypeHandle;
-            if (!runtimeTypeHandle.EEType.IsEnum)
+            if (!runtimeTypeHandle.ToEETypePtr().IsEnum)
                 throw new ArgumentException(SR.Arg_MustBeEnum);
 
             // We know this cast will succeed as we already checked for the existence of a RuntimeTypeHandle.
@@ -887,18 +888,26 @@ namespace System
                 return false;
             }
 
-            value = value.Trim();
-            if (value.Length == 0)
+            int firstNonWhitespaceIndex = -1;
+            for (int i = 0; i < value.Length; i++)
+            {
+                if (!char.IsWhiteSpace(value[i]))
+                {
+                    firstNonWhitespaceIndex = i;
+                    break;
+                }
+            }
+            if (firstNonWhitespaceIndex == -1)
             {
                 exception = new ArgumentException(SR.Arg_MustContainEnumInfo);
                 return false;
             }
 
-            EETypePtr enumEEType = runtimeEnumType.TypeHandle.EEType;
+            EETypePtr enumEEType = runtimeEnumType.TypeHandle.ToEETypePtr();
             if (!enumEEType.IsEnum)
                 throw new ArgumentException(SR.Arg_MustBeEnum, "enumType");
 
-            if (TryParseAsInteger(enumEEType, value, out result))
+            if (TryParseAsInteger(enumEEType, value, firstNonWhitespaceIndex, out result))
                 return true;
 
             // Parse as string. Now (and only now) do we look for metadata information.
@@ -910,20 +919,33 @@ namespace System
             // Port note: The docs are silent on how multiple matches are resolved when doing case-insensitive parses.
             // The desktop's ad-hoc behavior is to pick the one with the smallest value after doing a value-preserving cast
             // to a ulong, so we'll follow that here.
+            StringComparison comparison = ignoreCase ?
+                StringComparison.OrdinalIgnoreCase :
+                StringComparison.Ordinal;
             KeyValuePair<String, ulong>[] actualNamesAndValues = enumInfo.NamesAndValues;
-            foreach (String untrimmedName in value.Split(','))
+            int valueIndex = firstNonWhitespaceIndex;
+            while (valueIndex <= value.Length) // '=' is to handle invalid case of an ending comma
             {
-                String expectedName = untrimmedName.Trim();
+                // Find the next separator, if there is one, otherwise the end of the string.
+                int endIndex = value.IndexOf(',', valueIndex);
+                if (endIndex == -1)
+                {
+                    endIndex = value.Length;
+                }
+
+                // Shift the starting and ending indices to eliminate whitespace
+                int endIndexNoWhitespace = endIndex;
+                while (valueIndex < endIndex && char.IsWhiteSpace(value[valueIndex])) valueIndex++;
+                while (endIndexNoWhitespace > valueIndex && char.IsWhiteSpace(value[endIndexNoWhitespace - 1])) endIndexNoWhitespace--;
+                int valueSubstringLength = endIndexNoWhitespace - valueIndex;
+
+                // Try to match this substring against each enum name
                 bool foundMatch = false;
                 foreach (KeyValuePair<String, ulong> kv in actualNamesAndValues)
                 {
                     String actualName = kv.Key;
-                    bool match;
-                    if (ignoreCase)
-                        match = (0 == String.Compare(expectedName, actualName, StringComparison.OrdinalIgnoreCase));
-                    else
-                        match = (expectedName.Equals(actualName));
-                    if (match)
+                    if (actualName.Length == valueSubstringLength &&
+                        String.Compare(actualName, 0, value, valueIndex, valueSubstringLength, comparison) == 0)
                     {
                         v |= kv.Value;
                         foundMatch = true;
@@ -935,6 +957,9 @@ namespace System
                     exception = new ArgumentException(SR.Format(SR.Arg_EnumValueNotFound, value));
                     return false;
                 }
+
+                // Move our pointer to the ending index to go again.
+                valueIndex = endIndex + 1;
             }
             unsafe
             {
@@ -943,17 +968,20 @@ namespace System
             return true;
         }
 
-        private static bool TryParseAsInteger(EETypePtr enumEEType, String value, out Object result)
+        private static bool TryParseAsInteger(EETypePtr enumEEType, String value, int valueOffset, out Object result)
         {
+            Debug.Assert(value != null, "Expected non-null value");
+            Debug.Assert(value.Length > 0, "Expected non-empty value");
+            Debug.Assert(valueOffset >= 0 && valueOffset < value.Length, "Expected valueOffset to be within value");
+
             result = null;
 
-            if (value.Length == 0)
-                return false;
-
-            if (!(Char.IsDigit(value[0]) || value[0] == '+' || value[0] == '-'))
+            char firstNonWhitespaceChar = value[valueOffset];
+            if (!(Char.IsDigit(firstNonWhitespaceChar) || firstNonWhitespaceChar == '+' || firstNonWhitespaceChar == '-'))
                 return false;
             RuntimeImports.RhCorElementType corElementType = enumEEType.CorElementType;
 
+            value = value.Trim();
             unsafe
             {
                 switch (corElementType)

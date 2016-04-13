@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Text;
@@ -40,23 +41,23 @@ namespace System.Collections.Generic
     // and IReadOnlyDictionary<TKey, TValue>.
     public struct KeyValuePair<TKey, TValue>
     {
-        private TKey _key;
-        private TValue _value;
+        private TKey key;       // DO NOT change the field name, it's required for compatibility with desktop .NET as it appears in serialization payload.
+        private TValue value;   // DO NOT change the field name, it's required for compatibility with desktop .NET as it appears in serialization payload.
 
         public KeyValuePair(TKey key, TValue value)
         {
-            _key = key;
-            _value = value;
+            this.key = key;
+            this.value = value;
         }
 
         public TKey Key
         {
-            get { return _key; }
+            get { return key; }
         }
 
         public TValue Value
         {
-            get { return _value; }
+            get { return value; }
         }
 
         public override string ToString()

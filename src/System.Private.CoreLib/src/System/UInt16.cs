@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 /*============================================================
 **
@@ -75,14 +76,12 @@ namespace System
         }
 
         // Converts the current value to a String in base-10 with no extra padding.
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public override String ToString()
         {
             Contract.Ensures(Contract.Result<String>() != null);
             return FormatProvider.FormatUInt32(_value, null, null);
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public String ToString(IFormatProvider provider)
         {
             Contract.Ensures(Contract.Result<String>() != null);
@@ -90,14 +89,12 @@ namespace System
         }
 
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public String ToString(String format)
         {
             Contract.Ensures(Contract.Result<String>() != null);
             return FormatProvider.FormatUInt32(_value, format, null);
         }
 
-        [System.Security.SecuritySafeCritical]  // auto-generated
         public String ToString(String format, IFormatProvider provider)
         {
             Contract.Ensures(Contract.Result<String>() != null);

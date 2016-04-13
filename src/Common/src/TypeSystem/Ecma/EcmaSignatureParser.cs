@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Reflection.Metadata;
@@ -11,8 +12,8 @@ namespace Internal.TypeSystem.Ecma
 {
     public struct EcmaSignatureParser
     {
-        EcmaModule _module;
-        BlobReader _reader;
+        private EcmaModule _module;
+        private BlobReader _reader;
 
         // TODO
         // bool _hasModifiers;
@@ -77,7 +78,7 @@ namespace Internal.TypeSystem.Ecma
                     {
                         var elementType = ParseType();
                         var rank = _reader.ReadCompressedInteger();
- 
+
                         // TODO: Bounds for multi-dimmensional arrays
                         var boundsCount = _reader.ReadCompressedInteger();
                         for (int i = 0; i < boundsCount; i++)
@@ -92,8 +93,6 @@ namespace Internal.TypeSystem.Ecma
                     return ParseType().MakeByRefType();
                 case SignatureTypeCode.Pointer:
                     return _module.Context.GetPointerType(ParseType());
-                case SignatureTypeCode.Pinned: // TODO: Pinned types in local signatures!
-                    return ParseType();
                 case SignatureTypeCode.GenericTypeParameter:
                     return _module.Context.GetSignatureVariable(_reader.ReadCompressedInteger(), false);
                 case SignatureTypeCode.GenericMethodParameter:
@@ -112,6 +111,8 @@ namespace Internal.TypeSystem.Ecma
                     }
                 case SignatureTypeCode.TypedReference:
                     throw new PlatformNotSupportedException("TypedReference not supported in .NET Core");
+                case SignatureTypeCode.FunctionPointer:
+                    throw new PlatformNotSupportedException("Function pointer types are not supported in .NET Core");
                 default:
                     throw new BadImageFormatException();
             }
@@ -142,7 +143,7 @@ namespace Internal.TypeSystem.Ecma
             get
             {
                 BlobReader peek = _reader;
-                return (peek.ReadByte() & 0xF) == 6; // IMAGE_CEE_CS_CALLCONV_FIELD - add it to SignatureCallingConvention?
+                return peek.ReadSignatureHeader().Kind == SignatureKind.Field;
             }
         }
 
@@ -150,11 +151,11 @@ namespace Internal.TypeSystem.Ecma
         {
             MethodSignatureFlags flags = 0;
 
-            byte callingConvention = _reader.ReadByte();
-            if ((callingConvention & (byte)SignatureAttributes.Instance) == 0)
+            SignatureHeader header = _reader.ReadSignatureHeader();
+            if (!header.IsInstance)
                 flags |= MethodSignatureFlags.Static;
 
-            int arity = ((callingConvention & (byte)SignatureAttributes.Generic) != 0) ? _reader.ReadCompressedInteger() : 0;
+            int arity = header.IsGeneric ? _reader.ReadCompressedInteger() : 0;
 
             int count = _reader.ReadCompressedInteger();
 
@@ -178,43 +179,80 @@ namespace Internal.TypeSystem.Ecma
             return new MethodSignature(flags, arity, returnType, parameters);
         }
 
+        public PropertySignature ParsePropertySignature()
+        {
+            SignatureHeader header = _reader.ReadSignatureHeader();
+            if (header.Kind != SignatureKind.Property)
+                throw new BadImageFormatException();
+
+            bool isStatic = !header.IsInstance;
+
+            int count = _reader.ReadCompressedInteger();
+
+            TypeDesc returnType = ParseType();
+            TypeDesc[] parameters;
+
+            if (count > 0)
+            {
+                // Get all of the parameters.
+                parameters = new TypeDesc[count];
+                for (int i = 0; i < count; i++)
+                {
+                    parameters[i] = ParseType();
+                }
+            }
+            else
+            {
+                parameters = TypeDesc.EmptyTypes;
+            }
+
+            return new PropertySignature(isStatic, parameters, returnType);
+        }
+
         public TypeDesc ParseFieldSignature()
         {
-            if ((_reader.ReadByte() & 0xF) != 6) // IMAGE_CEE_CS_CALLCONV_FIELD - add it to SignatureCallingConvention?
+            if (_reader.ReadSignatureHeader().Kind != SignatureKind.Field)
                 throw new BadImageFormatException();
 
             return ParseType();
         }
 
-        public TypeDesc[] ParseLocalsSignature()
+        public LocalVariableDefinition[] ParseLocalsSignature()
         {
-            if ((_reader.ReadByte() & 0xF) != 7) // IMAGE_CEE_CS_CALLCONV_LOCAL_SIG - add it to SignatureCallingConvention?
+            if (_reader.ReadSignatureHeader().Kind != SignatureKind.LocalVariables)
                 throw new BadImageFormatException();
 
             int count = _reader.ReadCompressedInteger();
 
-            TypeDesc[] locals;
+            LocalVariableDefinition[] locals;
 
             if (count > 0)
             {
-                locals = new TypeDesc[count];
+                locals = new LocalVariableDefinition[count];
                 for (int i = 0; i < count; i++)
                 {
+                    bool isPinned = false;
+
                     SignatureTypeCode typeCode = ParseTypeCode();
-                    // TODO: Handle SignatureTypeCode.Pinned
-                    locals[i] = ParseType(typeCode);
+                    if (typeCode == SignatureTypeCode.Pinned)
+                    {
+                        isPinned = true;
+                        typeCode = ParseTypeCode();
+                    }
+
+                    locals[i] = new LocalVariableDefinition(ParseType(typeCode), isPinned);
                 }
             }
             else
             {
-                locals = TypeDesc.EmptyTypes;
+                locals = Array.Empty<LocalVariableDefinition>();
             }
             return locals;
         }
 
         public TypeDesc[] ParseMethodSpecSignature()
         {
-            if ((_reader.ReadByte() & 0xF) != 0xa) // IMAGE_CEE_CS_CALLCONV_GENERICINST - add it to SignatureCallingConvention?
+            if (_reader.ReadSignatureHeader().Kind != SignatureKind.MethodSpecification)
                 throw new BadImageFormatException();
 
             int count = _reader.ReadCompressedInteger();

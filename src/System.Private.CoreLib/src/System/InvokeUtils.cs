@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Runtime;
@@ -36,7 +37,7 @@ namespace System
         //
         public static Object CheckArgument(Object srcObject, RuntimeTypeHandle dstType)
         {
-            EETypePtr dstEEType = dstType.EEType;
+            EETypePtr dstEEType = dstType.ToEETypePtr();
             return CheckArgument(srcObject, dstEEType, CheckArgumentSemantics.DynamicInvoke);
         }
 
@@ -234,6 +235,7 @@ namespace System
         private const int DefaultParamTypeDefault = 10;
         private const int DefaultParamTypeDecimal = 11;
         private const int DefaultParamTypeDateTime = 12;
+        private const int DefaultParamTypeNoneButOptional = 13;
 
         private struct StringDataParser
         {
@@ -372,15 +374,15 @@ namespace System
                     return dataParser.GetString();
 
                 case DefaultParamTypeDefault:
-                    if (thType.EEType.IsValueType)
+                    if (thType.ToEETypePtr().IsValueType)
                     {
-                        if (RuntimeImports.RhIsNullable(thType.EEType))
+                        if (RuntimeImports.RhIsNullable(thType.ToEETypePtr()))
                         {
                             return null;
                         }
                         else
                         {
-                            return RuntimeImports.RhNewObject(thType.EEType);
+                            return RuntimeImports.RhNewObject(thType.ToEETypePtr());
                         }
                     }
                     else
@@ -413,9 +415,12 @@ namespace System
                     return new Decimal(decimalBits);
                 case DefaultParamTypeDateTime:
                     return new DateTime(dataParser.GetLong());
+                case DefaultParamTypeNoneButOptional:
+                    return System.Reflection.Missing.Value;
             }
         }
 
+        [DebuggerGuidedStepThroughAttribute]
         internal static object CallDynamicInvokeMethod(object thisPtr, IntPtr methodToCall, object thisPtrDynamicInvokeMethod, IntPtr dynamicInvokeHelperMethod, IntPtr dynamicInvokeHelperGenericDictionary, string defaultValueString, object[] parameters, bool invokeMethodHelperIsThisCall = true, bool methodToCallIsThisCall = true)
         {
             bool fDontWrapInTargetInvocationException = false;
@@ -432,7 +437,7 @@ namespace System
             {
                 // If the passed in array is not an actual object[] instance, we need to copy it over to an actual object[]
                 // instance so that the rest of the code can safely create managed object references to individual elements.
-                if (parameters != null && !typeof(object[]).TypeHandle.Equals(new RuntimeTypeHandle(parameters.EETypePtr)))
+                if (parameters != null && EETypePtr.EETypePtrOf<object[]>() != parameters.EETypePtr)
                 {
                     s_parameters = new object[parameters.Length];
                     Array.Copy(parameters, s_parameters, parameters.Length);
@@ -449,18 +454,28 @@ namespace System
 
                 try
                 {
+                    object result = null;
                     if (invokeMethodHelperIsThisCall)
                     {
                         Debug.Assert(methodToCallIsThisCall == true);
-                        return CallIHelperThisCall(thisPtr, methodToCall, thisPtrDynamicInvokeMethod, dynamicInvokeHelperMethod, ref argSetupState);
+                        result = CallIHelperThisCall(thisPtr, methodToCall, thisPtrDynamicInvokeMethod, dynamicInvokeHelperMethod, ref argSetupState);
+                        System.Diagnostics.DebugAnnotations.PreviousCallContainsDebuggerStepInCode();
                     }
                     else
                     {
                         if (dynamicInvokeHelperGenericDictionary != IntPtr.Zero)
-                            return CallIHelperStaticCallWithInstantiation(thisPtr, methodToCall, dynamicInvokeHelperMethod, ref argSetupState, methodToCallIsThisCall, dynamicInvokeHelperGenericDictionary);
+                        {
+                            result = CallIHelperStaticCallWithInstantiation(thisPtr, methodToCall, dynamicInvokeHelperMethod, ref argSetupState, methodToCallIsThisCall, dynamicInvokeHelperGenericDictionary);
+                            DebugAnnotations.PreviousCallContainsDebuggerStepInCode();
+                        }
                         else
-                            return CallIHelperStaticCall(thisPtr, methodToCall, dynamicInvokeHelperMethod, ref argSetupState, methodToCallIsThisCall);
+                        {
+                            result = CallIHelperStaticCall(thisPtr, methodToCall, dynamicInvokeHelperMethod, ref argSetupState, methodToCallIsThisCall);
+                            DebugAnnotations.PreviousCallContainsDebuggerStepInCode();
+                        }
                     }
+                    
+                    return result;
                 }
                 finally
                 {
@@ -523,6 +538,19 @@ namespace System
             argSetupState.fComplete = true;
             argSetupState.nullableCopyBackObjects = s_nullableCopyBackObjects;
             s_nullableCopyBackObjects = null;
+        }
+
+        [System.Runtime.CompilerServices.MethodImpl(System.Runtime.CompilerServices.MethodImplOptions.NoInlining)]
+        public static void DynamicInvokeArgSetupPtrComplete(IntPtr argSetupStatePtr)
+        {
+            // Intrinsic filled by the ImplementLibraryDynamicInvokeHelpers transform.
+            // argSetupStatePtr is a pointer to a *pinned* ArgSetupState object
+
+            // ldarg.0
+            // call void System.InvokeUtils.DynamicInvokeArgSetupComplete(ref ArgSetupState)
+            // ret
+
+            throw new PlatformNotSupportedException();
         }
 
         internal static object CallIHelperThisCall(object thisPtr, IntPtr methodToCall, object thisPtrForDynamicInvokeHelperMethod, IntPtr dynamicInvokeHelperMethod, ref ArgSetupState argSetupState)
@@ -758,7 +786,7 @@ namespace System
         internal static object DynamicInvokeBoxedValuetypeReturn(out DynamicInvokeParamLookupType paramLookupType, object boxedValuetype, int index, RuntimeTypeHandle type, DynamicInvokeParamType paramType)
         {
             object finalObjectToReturn = boxedValuetype;
-            EETypePtr eeType = type.EEType;
+            EETypePtr eeType = type.ToEETypePtr();
             bool nullable = RuntimeImports.RhIsNullable(eeType);
 
             if (finalObjectToReturn == null || nullable || paramType == DynamicInvokeParamType.Ref)
@@ -794,7 +822,7 @@ namespace System
             return finalObjectToReturn;
         }
 
-        internal static object DynamicInvokeParamHelperCore(RuntimeTypeHandle type, out DynamicInvokeParamLookupType paramLookupType, out int index, DynamicInvokeParamType paramType)
+        public static object DynamicInvokeParamHelperCore(RuntimeTypeHandle type, out DynamicInvokeParamLookupType paramLookupType, out int index, DynamicInvokeParamType paramType)
         {
             index = s_curIndex++;
             int parametersLength = s_parameters != null ? s_parameters.Length : 0;
@@ -814,45 +842,45 @@ namespace System
             }
 
             RuntimeTypeHandle widenAndCompareType = type;
-            bool nullable = RuntimeImports.RhIsNullable(type.EEType);
+            bool nullable = RuntimeImports.RhIsNullable(type.ToEETypePtr());
             if (nullable)
             {
-                widenAndCompareType = new RuntimeTypeHandle(RuntimeImports.RhGetNullableType(type.EEType));
+                widenAndCompareType = new RuntimeTypeHandle(RuntimeImports.RhGetNullableType(type.ToEETypePtr()));
             }
 
-            if (widenAndCompareType.EEType.IsPrimitive || type.EEType.IsEnum)
+            if (widenAndCompareType.ToEETypePtr().IsPrimitive || type.ToEETypePtr().IsEnum)
             {
                 // Nullable requires exact matching
                 if (incomingParam != null)
                 {
                     if ((nullable || paramType == DynamicInvokeParamType.Ref) && incomingParam != null)
                     {
-                        if (widenAndCompareType.EEType != incomingParam.EETypePtr)
+                        if (widenAndCompareType.ToEETypePtr() != incomingParam.EETypePtr)
                         {
-                            throw CreateChangeTypeArgumentException(incomingParam.EETypePtr, type.EEType);
+                            throw CreateChangeTypeArgumentException(incomingParam.EETypePtr, type.ToEETypePtr());
                         }
                     }
                     else
                     {
-                        if (widenAndCompareType.EEType.CorElementType != incomingParam.EETypePtr.CorElementType)
+                        if (widenAndCompareType.ToEETypePtr().CorElementType != incomingParam.EETypePtr.CorElementType)
                         {
                             System.Diagnostics.Debug.Assert(paramType == DynamicInvokeParamType.In);
-                            incomingParam = InvokeUtils.CheckArgument(incomingParam, widenAndCompareType.EEType, InvokeUtils.CheckArgumentSemantics.DynamicInvoke);
+                            incomingParam = InvokeUtils.CheckArgument(incomingParam, widenAndCompareType.ToEETypePtr(), InvokeUtils.CheckArgumentSemantics.DynamicInvoke);
                         }
                     }
                 }
 
                 return DynamicInvokeBoxedValuetypeReturn(out paramLookupType, incomingParam, index, type, paramType);
             }
-            else if (type.EEType.IsValueType)
+            else if (type.ToEETypePtr().IsValueType)
             {
-                incomingParam = InvokeUtils.CheckArgument(incomingParam, type.EEType, InvokeUtils.CheckArgumentSemantics.DynamicInvoke);
+                incomingParam = InvokeUtils.CheckArgument(incomingParam, type.ToEETypePtr(), InvokeUtils.CheckArgumentSemantics.DynamicInvoke);
                 System.Diagnostics.Debug.Assert(s_parameters[index] == null || Object.ReferenceEquals(incomingParam, s_parameters[index]));
                 return DynamicInvokeBoxedValuetypeReturn(out paramLookupType, incomingParam, index, type, paramType);
             }
             else
             {
-                incomingParam = InvokeUtils.CheckArgument(incomingParam, widenAndCompareType.EEType, InvokeUtils.CheckArgumentSemantics.DynamicInvoke);
+                incomingParam = InvokeUtils.CheckArgument(incomingParam, widenAndCompareType.ToEETypePtr(), InvokeUtils.CheckArgumentSemantics.DynamicInvoke);
                 System.Diagnostics.Debug.Assert(Object.ReferenceEquals(incomingParam, s_parameters[index]));
                 paramLookupType = DynamicInvokeParamLookupType.IndexIntoObjectArrayReturned;
                 return s_parameters;

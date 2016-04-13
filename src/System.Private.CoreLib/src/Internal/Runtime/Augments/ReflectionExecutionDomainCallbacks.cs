@@ -1,5 +1,6 @@
-﻿// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //Internal.Runtime.Augments
 //-------------------------------------------------
@@ -23,6 +24,12 @@ namespace Internal.Runtime.Augments
     [CLSCompliant(false)]
     public abstract class ReflectionExecutionDomainCallbacks
     {
+        /// <summary>
+        /// Register reflection module. Not thread safe with respect to reflection runtime.
+        /// </summary>
+        /// <param name="moduleHandle">Handle of module to register</param>
+        public abstract void RegisterModule(IntPtr moduleHandle);
+        
         // Api's that are exposed in System.Runtime but are really reflection apis.
         public abstract Object ActivatorCreateInstance(Type type, Object[] args);
         public abstract Type GetType(String typeName, bool throwOnError, bool ignoreCase);
@@ -50,7 +57,7 @@ namespace Internal.Runtime.Augments
         public abstract bool TryGetMetadataNameForRuntimeTypeHandle(RuntimeTypeHandle rtth, out string name);
 
         // Generic Virtual Method Support
-        public abstract bool TryGetGenericVirtualTargetForTypeAndSlot(RuntimeTypeHandle targetHandle, ref RuntimeTypeHandle declaringType, ref RuntimeTypeHandle[] genericArguments, ref string methodName, ref IntPtr methodSignature, out IntPtr methodPointer, out IntPtr dictionaryPointer, out bool slotUpdated);
+        public abstract bool TryGetGenericVirtualTargetForTypeAndSlot(RuntimeTypeHandle targetHandle, ref RuntimeTypeHandle declaringType, RuntimeTypeHandle[] genericArguments, ref string methodName, ref IntPtr methodSignature, out IntPtr methodPointer, out IntPtr dictionaryPointer, out bool slotUpdated);
 
         // Flotsam and jetsam.
         public abstract Exception CreateMissingMetadataException(Type typeWithMissingMetadata);

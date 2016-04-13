@@ -1,7 +1,6 @@
-;;
-;; Copyright (c) Microsoft. All rights reserved.
-;; Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-;;
+;; Licensed to the .NET Foundation under one or more agreements.
+;; The .NET Foundation licenses this file to you under the MIT license.
+;; See the LICENSE file in the project root for more information.
 
 include AsmMacros.inc
 
@@ -69,9 +68,14 @@ UPDATE_GC_SHADOW macro BASENAME, REFREG, DESTREG
 
     ;; Retrieve shadow location from the stack and restore original DESTREG to the stack. This is an
     ;; additional memory barrier we don't require but it's on the rare path and x86 doesn't have an xchg
-    ;; variant that doesn't implicitly specify the lock prefix.
+    ;; variant that doesn't implicitly specify the lock prefix. Note that INVALIDGCVALUE is a 64-bit
+    ;; immediate and therefore must be moved into a register before it can be written to the shadow
+    ;; location.
     xchg    [rsp], DESTREG
-    mov     qword ptr [DESTREG], INVALIDGCVALUE
+    push    REFREG
+    mov     REFREG, INVALIDGCVALUE
+    mov     qword ptr [DESTREG], REFREG
+    pop     REFREG
 
 &BASENAME&_UpdateShadowHeap_PopThenDone_&REFREG&:
     ;; Restore original DESTREG value from the stack.
@@ -141,6 +145,7 @@ LEAF_ENTRY RhpAssignRef&EXPORT_REG_NAME&, _TEXT
     ;; Export the canonical write barrier under unqualified name as well
     ifidni <REFREG>, <RDX>
     ALTERNATE_ENTRY RhpAssignRef
+    ALTERNATE_ENTRY RhpAssignRefAVLocation
     endif
 
     ;; Write the reference into the location. Note that we rely on the fact that no GC can occur between here
@@ -194,6 +199,7 @@ LEAF_ENTRY RhpCheckedAssignRef&EXPORT_REG_NAME&, _TEXT
     ;; Export the canonical write barrier under unqualified name as well
     ifidni <REFREG>, <RDX>
     ALTERNATE_ENTRY RhpCheckedAssignRef
+    ALTERNATE_ENTRY RhpCheckedAssignRefAVLocation
     endif
 
     ;; Write the reference into the location. Note that we rely on the fact that no GC can occur between here
@@ -237,7 +243,7 @@ ALTERNATE_ENTRY RhpCheckedXchgAVLocation
 
 LEAF_END RhpCheckedXchg, _TEXT
 
-
+ifndef CORERT
 ;;
 ;; Write barrier used when a large number of bytes possibly containing GC references have been updated. For
 ;; speed we don't try to determine GC series information for the value or array of values. Instead we just
@@ -270,7 +276,6 @@ LEAF_ENTRY RhpBulkWriteBarrier, _TEXT
     jb      NoBarrierRequired
 
 ifdef WRITE_BARRIER_CHECK
-  
     ;; Perform shadow heap updates corresponding to the gc heap updates that immediately preceded this helper
     ;; call. See the comment for UPDATE_GC_SHADOW above for a more detailed explanation of why we do this and
     ;; the synchronization implications.
@@ -335,7 +340,10 @@ BulkWriteBarrier_UpdateShadowHeap_NextIteration:
     jmp     BulkWriteBarrier_UpdateShadowHeap_CopyLoop
 
 BulkWriteBarrier_UpdateShadowHeap_LostRace:
-    mov     qword ptr [r9], INVALIDGCVALUE
+    ;; Note that INVALIDGCVALUE is a 64-bit immediate and therefore must be moved into a register before
+    ;; it can be written to the shadow location.
+    mov     rax, INVALIDGCVALUE
+    mov     qword ptr [r9], rax
     jmp     BulkWriteBarrier_UpdateShadowHeap_NextIteration
 
 BulkWriteBarrier_UpdateShadowHeap_Done:
@@ -388,6 +396,8 @@ NoBarrierRequired:
 
 LEAF_END RhpBulkWriteBarrier, _TEXT
 
+endif ; CORERT
+
 ;;
 ;; RhpByRefAssignRef simulates movs instruction for object references.
 ;;
@@ -403,6 +413,12 @@ LEAF_END RhpBulkWriteBarrier, _TEXT
 LEAF_ENTRY RhpByRefAssignRef, _TEXT
     mov     rcx, [rsi]
     mov     [rdi], rcx
+
+    ;; Check whether the writes were even into the heap. If not there's no card update required.
+    cmp     rdi, [g_lowest_address]
+    jb      RhpByRefAssignRef_NotInHeap
+    cmp     rdi, [g_highest_address]
+    jae     RhpByRefAssignRef_NotInHeap
 
     ;; Update the shadow copy of the heap with the same value just written to the same heap. (A no-op unless
     ;; we're in a debug build and write barrier checking has been enabled).

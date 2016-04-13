@@ -1,22 +1,18 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
-#include "rhcommon.h"
-#ifdef DACCESS_COMPILE
-#include "gcrhenv.h"
-#endif // DACCESS_COMPILE
-
-#ifndef DACCESS_COMPILE
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
+#include "common.h"
 #include "CommonTypes.h"
 #include "CommonMacros.h"
 #include "daccess.h"
 #include "PalRedhawkCommon.h"
 #include "PalRedhawk.h"
-#include "assert.h"
+#include "rhassert.h"
 #include "slist.h"
 #include "holder.h"
 #include "gcrhinterface.h"
+#include "shash.h"
+#include "RWLock.h"
 #include "module.h"
 #include "varint.h"
 #include "rhbinder.h"
@@ -25,7 +21,6 @@
 #include "StackFrameIterator.h"
 #include "thread.h"
 #include "event.h"
-#include "RWLock.h"
 #include "RuntimeInstance.h"
 #include "eetype.h"
 #include "ObjectLayout.h"
@@ -34,11 +29,7 @@
 
 #include "CommonMacros.inl"
 #include "slist.inl"
-#else
-#include "gcrhinterface.h"
-#include "module.h"
-#include "rhbinder.h"
-#endif
+#include "shash.inl"
 
 #include "gcinfo.h"
 #include "RHCodeMan.h"
@@ -58,26 +49,6 @@ Module::Module(ModuleHeader *pModuleHeader) :
     m_MethodList(),
     m_fFinalizerInitComplete(false)
 {
-}
-
-Module * Module::Create(SimpleModuleHeader *pModuleHeader)
-{
-    NewHolder<Module> pNewModule = new (nothrow) Module(nullptr);
-    if (NULL == pNewModule)
-        return NULL;
-
-    pNewModule->m_pSimpleModuleHeader = pModuleHeader;
-    pNewModule->m_pEHTypeTable = nullptr;
-    pNewModule->m_pbDeltaShortcutTable = nullptr;
-    pNewModule->m_FrozenSegment = nullptr;
-    pNewModule->m_pStaticsGCInfo = dac_cast<PTR_StaticGcDesc>(pModuleHeader->m_pStaticsGcInfo);
-    pNewModule->m_pStaticsGCDataSection = dac_cast<PTR_UInt8>((UInt8*)pModuleHeader->m_pStaticsGcDataSection);
-    pNewModule->m_pThreadStaticsGCInfo = nullptr;
-
-    pNewModule->m_hOsModuleHandle = PalGetModuleHandleFromPointer(pModuleHeader);
-
-    pNewModule.SuppressRelease();
-    return pNewModule;
 }
 
 Module * Module::Create(ModuleHeader *pModuleHeader)
@@ -124,21 +95,9 @@ Module * Module::Create(ModuleHeader *pModuleHeader)
     Module::DoCustomImports(pModuleHeader);
 #endif // FEATURE_CUSTOM_IMPORTS
 
-#ifdef FEATURE_VSD
-    // VirtualCallStubManager::ApplyPartialPolymorphicCallSiteResetForModule relies on being able to
-    // multiply CountVSDIndirectionCells by up to 100. Instead of trying to handle overflow gracefully
-    // we reject modules that would cause such an overflow. This limits the number of indirection
-    // cells to 1GB in number, which is perfectly reasonable given that this limit implies we'll also
-    // hit (or exceed in the 64bit case) the PE image 4GB file size limit.
-    if (pModuleHeader->CountVSDIndirectionCells > (UInt32_MAX / 100))
-    {
-        return NULL;
-    }
-#endif // FEATURE_VSD
-
 #ifdef _DEBUG
 #ifdef LOG_MODULE_LOAD_VERIFICATION
-    PalPrintf("\r\nModule: 0x%p\r\n", pNewModule->m_hOsModuleHandle);
+    printf("\nModule: 0x%p\n", pNewModule->m_hOsModuleHandle);
 #endif // LOG_MODULE_LOAD_VERIFICATION
     //
     // Run through every byte of every method in the module and do some sanity-checking. Exclude stub code.
@@ -168,7 +127,7 @@ Module * Module::Create(ModuleHeader *pModuleHeader)
     
 
 #ifdef LOG_MODULE_LOAD_VERIFICATION
-        PalPrintf("0x%08x: %3d 0x%08x 0x%08x\r\n", 
+        printf("0x%08x: %3d 0x%08x 0x%08x\n", 
             uTextSectionOffset, uMethodIndex, uMethodStartSectionOffset, uMethodSize);
 #endif // LOG_MODULE_LOAD_VERIFICATION
 
@@ -248,7 +207,7 @@ Module * Module::Create(ModuleHeader *pModuleHeader)
         pNewModule->UnsynchronizedHijackAllLoops();
 
 #ifdef LOG_MODULE_LOAD_VERIFICATION
-    PalPrintf("0x%08x: --- 0x%08x \r\n", (uTextSectionOffset + uMethodSize), 
+    printf("0x%08x: --- 0x%08x \n", (uTextSectionOffset + uMethodSize), 
                                          (uMethodStartSectionOffset + uMethodSize));
 #endif // LOG_MODULE_LOAD_VERIFICATION
 #endif // _DEBUG
@@ -495,6 +454,13 @@ bool Module::UnwindStackFrame(MethodInfo *  pMethodInfo,
     return EECodeManager::UnwindStackFrame(pEEMethodInfo, codeOffset, pRegisterSet);
 }
 
+UIntNative Module::GetConservativeUpperBoundForOutgoingArgs(MethodInfo *   pMethodInfo,
+                                                            REGDISPLAY *   pRegisterSet)
+{
+    EEMethodInfo * pEEMethodInfo = GetEEMethodInfo(pMethodInfo);
+    return EECodeManager::GetConservativeUpperBoundForOutgoingArgs(pEEMethodInfo, pRegisterSet);
+}
+
 bool Module::GetReturnAddressHijackInfo(MethodInfo *    pMethodInfo,
                                         UInt32          codeOffset,
                                         REGDISPLAY *    pRegisterSet,
@@ -532,37 +498,7 @@ struct EEEHEnumState
 };
 
 // Ensure that EEEHEnumState fits into the space reserved by EHEnumState
-STATIC_ASSERT(sizeof(EEEHEnumState) <= sizeof(EHEnumState));
-
-#if 1 // only needed for local-exception model
-bool Module::EHEnumInitFromReturnAddress(PTR_VOID ControlPC, PTR_VOID * pMethodStartAddressOut, EHEnumState * pEHEnumStateOut)
-{
-    ASSERT(ContainsCodeAddress(ControlPC));
-
-    PTR_UInt8 pbControlPC = dac_cast<PTR_UInt8>(ControlPC);
-
-    UInt32 uMethodIndex;
-    UInt32 uMethodStartSectionOffset;
-
-    PTR_UInt8 pbTextSectionStart = m_pModuleHeader->RegionPtr[ModuleHeader::TEXT_REGION];
-    UInt32 uTextSectionOffset = (UInt32)(pbControlPC - pbTextSectionStart);
-
-    m_MethodList.GetMethodInfo(uTextSectionOffset, &uMethodIndex, &uMethodStartSectionOffset, NULL);
-
-    *pMethodStartAddressOut = pbTextSectionStart + uMethodStartSectionOffset;
-
-    PTR_VOID pEHInfo = m_MethodList.GetEHInfo(uMethodIndex);
-    if (pEHInfo == NULL)
-        return false;
-
-    EEEHEnumState * pEnumState = (EEEHEnumState *)pEHEnumStateOut;
-    pEnumState->pEHInfo = (PTR_UInt8)pEHInfo;
-    pEnumState->uClause = 0;
-    pEnumState->nClauses = VarInt::ReadUnsigned(pEnumState->pEHInfo);
-
-    return true;
-}
-#endif // 1
+static_assert(sizeof(EEEHEnumState) <= sizeof(EHEnumState), "EEEHEnumState does not fit into EHEnumState");
 
 bool Module::EHEnumInit(MethodInfo * pMethodInfo, PTR_VOID * pMethodStartAddressOut, EHEnumState * pEHEnumStateOut)
 {
@@ -599,12 +535,6 @@ bool Module::EHEnumNext(EHEnumState * pEHEnumState, EHClause * pEHClauseOut)
     // For each clause, we have up to 4 integers:
     //      1)  try start offset
     //      2)  (try length << 2) | clauseKind
-    //
-    //      Local exceptions
-    //      3) if (typed || fault) { handler start offset }
-    //      4) if (typed)          { index into type table }
-    //
-    //      CLR exceptions
     //      3)  if (typed || fault || filter)    { handler start offset }
     //      4a) if (typed)                       { index into type table }
     //      4b) if (filter)                      { filter start offset }
@@ -637,7 +567,8 @@ bool Module::EHEnumNext(EHEnumState * pEHEnumState, EHClause * pEHClauseOut)
         pEHClauseOut->m_handlerOffset = VarInt::ReadUnsigned(pEnumState->pEHInfo);
         pEHClauseOut->m_filterOffset = VarInt::ReadUnsigned(pEnumState->pEHInfo);
         break;
-    case EH_CLAUSE_FAIL_FAST:
+    default:
+        ASSERT_UNCONDITIONALLY("Unexpected EHClauseKind");
         break;
     }
 
@@ -737,25 +668,6 @@ void Module::RemapHardwareFaultToGCSafePoint(MethodInfo * pMethodInfo, UInt32 * 
 
 #ifndef DACCESS_COMPILE
 
-#ifdef FEATURE_VSD
-
-IndirectionCell * Module::GetIndirectionCellArray()
-{
-    return (IndirectionCell*)m_pModuleHeader->GetVSDIndirectionCells();
-}
-
-UInt32 Module::GetIndirectionCellArrayCount()
-{
-    return m_pModuleHeader->CountVSDIndirectionCells;
-}
-
-VSDInterfaceTargetInfo * Module::GetInterfaceTargetInfoArray()
-{
-    return (VSDInterfaceTargetInfo*)m_pModuleHeader->GetVSDInterfaceTargetInfos();
-}
-
-#endif // FEATURE_VSD
-
 //------------------------------------------------------------------------------------------------------------
 // @TODO: the following functions are related to throwing exceptions out of Rtm. If we did not have to throw
 // out of Rtm, then we would note have to have the code below to get a classlib exception object given
@@ -805,28 +717,33 @@ EEType * Module::GetArrayBaseType()
     return pArrayBaseType;
 }
 
-// Return the classlib-defined GetRuntimeException helper. Returns NULL if this is not a classlib module, or
-// if this classlib module fails to export the helper.
-void * Module::GetClasslibRuntimeExceptionHelper()
+// Return the classlib-defined helper.
+void * Module::GetClasslibFunction(ClasslibFunctionId functionId)
 {
-    return m_pModuleHeader->Get_GetRuntimeException();
-}
+    // First, delegate the call to the classlib module that this module was compiled against.
+    if (!IsClasslibModule())
+        return GetClasslibModule()->GetClasslibFunction(functionId);
 
-// Return the classlib-defined FailFast helper. Returns NULL if this is not a classlib module, or
-// if this classlib module fails to export the helper.
-void * Module::GetClasslibFailFastHelper()
-{
-    return m_pModuleHeader->Get_FailFast();
-}
+    // Lookup the method and return it. If we don't find it, we just return NULL.
+    void * pMethod = NULL;
 
-void * Module::GetClasslibUnhandledExceptionHandlerHelper()
-{
-    return m_pModuleHeader->Get_UnhandledExceptionHandler();
-}
+    switch (functionId)
+    {
+    case ClasslibFunctionId::GetRuntimeException:
+        pMethod = m_pModuleHeader->Get_GetRuntimeException();
+        break;
+    case ClasslibFunctionId::AppendExceptionStackFrame:
+        pMethod = m_pModuleHeader->Get_AppendExceptionStackFrame();
+        break;
+    case ClasslibFunctionId::FailFast:
+        pMethod = m_pModuleHeader->Get_FailFast();
+        break;
+    case ClasslibFunctionId::UnhandledExceptionHandler:
+        pMethod = m_pModuleHeader->Get_UnhandledExceptionHandler();
+        break;
+    }
 
-void * Module::GetClasslibAppendExceptionStackFrameHelper()
-{
-    return m_pModuleHeader->Get_AppendExceptionStackFrame();
+    return pMethod;
 }
 
 // Get classlib-defined helper for running deferred static class constructors. Returns NULL if this is not the
@@ -843,131 +760,10 @@ void * Module::GetClasslibInitializeFinalizerThread()
     return m_pModuleHeader->Get_InitializeFinalizerThread();
 }
 
-// Remove from the system any generic instantiations published by this module and not required by any other
-// module currently loaded.
-void Module::UnregisterGenericInstances()
-{
-    RuntimeInstance *pRuntimeInstance = GetRuntimeInstance();
-
-    // There can be up to three segments of GenericInstanceDescs, separated to improve locality.
-    const UInt32 cInstSections = 3;
-    GenericInstanceDesc * rgInstPointers[cInstSections];
-    UInt32 rgInstCounts[cInstSections];
-    rgInstPointers[0] = (GenericInstanceDesc*)m_pModuleHeader->GetGenericInstances();
-    rgInstCounts[0] = m_pModuleHeader->CountGenericInstances;
-    rgInstPointers[1] = (GenericInstanceDesc*)m_pModuleHeader->GetGcRootGenericInstances();
-    rgInstCounts[1] = m_pModuleHeader->CountGcRootGenericInstances;
-    rgInstPointers[2] = (GenericInstanceDesc*)m_pModuleHeader->GetVariantGenericInstances();
-    rgInstCounts[2] = m_pModuleHeader->CountVariantGenericInstances;
-
-    for (UInt32 idxSection = 0; idxSection < cInstSections; idxSection++)
-    {
-        GenericInstanceDesc *pGid = rgInstPointers[idxSection];
-
-        for (UInt32 i = 0; i < rgInstCounts[idxSection]; i++)
-        {
-            // Skip GIDs without an instantiation, they're just padding used to avoid base relocs straddling
-            // page boundaries (which is bad for perf). They're also not included in the GID count, so adjust
-            // that as we see them.
-            if (pGid->HasInstantiation())
-                pRuntimeInstance->ReleaseGenericInstance(pGid);
-            else
-            {
-                ASSERT(pGid->GetFlags() == GenericInstanceDesc::GID_NoFields);
-                rgInstCounts[idxSection]++;
-            }
-
-            pGid = (GenericInstanceDesc *)((UInt8*)pGid + pGid->GetSize());
-        }
-    }
-}
-
-bool Module::RegisterGenericInstances()
-{
-    bool fSuccess = true;
-
-    RuntimeInstance *runtimeInstance = GetRuntimeInstance();
-
-    // There can be up to three segments of GenericInstanceDescs, separated to improve locality.
-    const UInt32 cInstSections = 3;
-    GenericInstanceDesc * rgInstPointers[cInstSections];
-    UInt32 rgInstCounts[cInstSections];
-    rgInstPointers[0] = (GenericInstanceDesc*)m_pModuleHeader->GetGenericInstances();
-    rgInstCounts[0] = m_pModuleHeader->CountGenericInstances;
-    rgInstPointers[1] = (GenericInstanceDesc*)m_pModuleHeader->GetGcRootGenericInstances();
-    rgInstCounts[1] = m_pModuleHeader->CountGcRootGenericInstances;
-    rgInstPointers[2] = (GenericInstanceDesc*)m_pModuleHeader->GetVariantGenericInstances();
-    rgInstCounts[2] = m_pModuleHeader->CountVariantGenericInstances;
-
-    // Registering generic instances with the runtime is performed as a transaction. This allows for some
-    // efficiencies (for instance, no need to continually retake hash table locks around each unification).
-    if (!runtimeInstance->StartGenericUnification(rgInstCounts[0] + rgInstCounts[1] + rgInstCounts[2]))
-        return false;
-
-    UInt32 uiLocalTlsIndex = m_pModuleHeader->PointerToTlsIndex ? *m_pModuleHeader->PointerToTlsIndex : TLS_OUT_OF_INDEXES;
-
-    for (UInt32 idxSection = 0; idxSection < cInstSections; idxSection++)
-    {
-        GenericInstanceDesc *pGid = rgInstPointers[idxSection];
-
-        for (UInt32 i = 0; i < rgInstCounts[idxSection]; i++)
-        {
-            // We can get padding GenericInstanceDescs every so often that are inserted to ensure none of the
-            // base relocs associated with a GID straddle a page boundary (which is very inefficient). These
-            // don't have instantiations. They're also not included in the GID count, so adjust that as we see
-            // them.
-            if (pGid->HasInstantiation())
-            {
-                if (!runtimeInstance->UnifyGenericInstance(pGid, uiLocalTlsIndex))
-                {
-                    fSuccess = false;
-                    goto Finished;
-                }
-            }
-            else
-            {
-                ASSERT(pGid->GetFlags() == GenericInstanceDesc::GID_NoFields);
-                rgInstCounts[idxSection]++;
-            }
-
-            pGid = (GenericInstanceDesc *)((UInt8*)pGid + pGid->GetSize());
-        }
-    }
-
-  Finished:
-    runtimeInstance->EndGenericUnification();
-
-    return fSuccess;
-}
-
-
 // Returns true if this module is part of the OS module specified by hOsHandle.
 bool Module::IsContainedBy(HANDLE hOsHandle)
 {
     return m_hOsModuleHandle == hOsHandle;
-}
-
-// NULL out any GC references held by statics in this module. Note that this is unsafe unless we know that no
-// code is making (or can make) any reference to these statics. Generally this is only true when we are about
-// to unload the module.
-void Module::ClearStaticRoots()
-{
-    StaticGcDesc * pStaticGcInfo = (StaticGcDesc*)m_pModuleHeader->GetStaticsGCInfo();
-    if (!pStaticGcInfo)
-        return;
-
-    UInt8 * pGcStaticsSection = m_pModuleHeader->GetStaticsGCDataSection();
-
-    for (UInt32 idxSeries = 0; idxSeries < pStaticGcInfo->m_numSeries; idxSeries++)
-    {
-        StaticGcDesc::GCSeries * pSeries = &pStaticGcInfo->m_series[idxSeries];
-
-        Object **   pRefLocation = (Object**)(pGcStaticsSection + pSeries->m_startOffset);
-        UInt32      numObjects = pSeries->m_size / sizeof(Object*);
-
-        for (UInt32 idxObj = 0; idxObj < numObjects; idxObj++)
-            pRefLocation[idxObj] = NULL;
-    }
 }
 
 void Module::UnregisterFrozenSection()
@@ -993,13 +789,13 @@ void Module::UnsynchronizedHijackMethodLoops(MethodInfo * pMethodInfo)
     void * pvRedirStubsStart = m_pModuleHeader->GetLoopRedirTargets();
     void * pvRedirStubsEnd   = ((UInt8 *)pvRedirStubsStart) + GcPollInfo::EntryIndexToStubOffset(nIndirCells);
 
-#ifdef TARGET_ARM
+#ifdef _TARGET_ARM_
     // on ARM, there is just one redir stub, because we can compute the indir cell index 
     // from the indir cell pointer left in r12
     // to make the range tests below work, bump up the end by one byte
     ASSERT(pvRedirStubsStart == pvRedirStubsEnd);
     pvRedirStubsEnd = (void *)(((UInt8 *)pvRedirStubsEnd)+1);
-#endif // TARGET_ARM
+#endif // _TARGET_ARM_
 
 
     void ** ppvStart = &ppvIndirCells[0];
@@ -1147,6 +943,22 @@ void Module::UnsynchronizedResetHijackedLoops()
 
 EXTERN_C void * FASTCALL RecoverLoopHijackTarget(UInt32 entryIndex, ModuleHeader * pModuleHeader)
 {
+    Module * pModule = GetRuntimeInstance()->FindModuleByReadOnlyDataAddress(pModuleHeader);
+    return pModule->RecoverLoopHijackTarget(entryIndex, pModuleHeader);
+}
+
+void * Module::RecoverLoopHijackTarget(UInt32 entryIndex, ModuleHeader * pModuleHeader)
+{
+    // read lock scope
+    {
+        ReaderWriterLock::ReadHolder readHolder(&m_loopHijackMapLock);
+        void * pvLoopTarget;
+        if (m_loopHijackIndexToTargetMap.Lookup(entryIndex, &pvLoopTarget))
+        {
+            return pvLoopTarget;
+        }
+    }
+
     UInt8 * pbTargetsInfoStart  = pModuleHeader->GetLoopTargets();
     UInt8 * pbCurrentChunkPtr   = pbTargetsInfoStart;
 
@@ -1167,7 +979,16 @@ EXTERN_C void * FASTCALL RecoverLoopHijackTarget(UInt32 entryIndex, ModuleHeader
         targetOffset += VarInt::ReadUnsigned(pbCurrentInfo);
     }
 
-    return pModuleHeader->RegionPtr[ModuleHeader::TEXT_REGION] + targetOffset;;
+    void * pvLoopTarget = pModuleHeader->RegionPtr[ModuleHeader::TEXT_REGION] + targetOffset;
+
+    // write lock scope
+    {
+        ReaderWriterLock::WriteHolder writeHolder(&m_loopHijackMapLock);
+        KeyValuePair<UInt32, void *> newEntry = { entryIndex, pvLoopTarget };
+        m_loopHijackIndexToTargetMap.AddOrReplace(newEntry);
+    }
+
+    return pvLoopTarget;
 }
 
 void Module::UnsynchronizedHijackAllLoops()
@@ -1314,7 +1135,7 @@ UInt32 Module::GetGenericInstanceDescCount(GenericInstanceDescKind gidKind)
 #define IMAGE_ORDINAL_FLAG64 0x8000000000000000
 #define IMAGE_ORDINAL_FLAG32 0x80000000
 
-#ifdef TARGET_X64
+#ifdef _TARGET_AMD64_
 #define TARGET_IMAGE_ORDINAL_FLAG IMAGE_ORDINAL_FLAG64
 #else
 #define TARGET_IMAGE_ORDINAL_FLAG IMAGE_ORDINAL_FLAG32
@@ -1411,4 +1232,27 @@ void Module::DoCustomImports(ModuleHeader * pModuleHeader)
 }
 #endif // FEATURE_CUSTOM_IMPORTS
 
+#endif // DACCESS_COMPILE
+
+#ifdef DACCESS_COMPILE
+UInt32 StaticGcDesc::DacSize(TADDR addr)
+{
+    uint32_t numSeries = 0;
+    DacReadAll(addr + offsetof(StaticGcDesc, m_numSeries), &numSeries, sizeof(numSeries), true);
+
+    return (UInt32)(offsetof(StaticGcDesc, m_series) + (numSeries * sizeof(GCSeries)));
+}
+
+UInt32 GenericInstanceDesc::DacSize(TADDR addr)
+{
+    static_assert(offsetof(GenericInstanceDesc, m_Flags) == 0, "GenericInstanceDesc::m_Flags is expected to be at offset 0");
+
+    GenericInstanceDesc dummyDesc;
+    DacReadAll(addr, &dummyDesc, sizeof(GenericInstanceDesc::OptionalFieldTypes), true);
+
+    UInt32 arity = 0;
+    UInt32 arityOffset = dummyDesc.GetArityOffset();
+    DacReadAll(addr + arityOffset, &arity, sizeof(UInt32), true);
+    return GenericInstanceDesc::GetSize(dummyDesc.GetFlags(), arity);
+}
 #endif // DACCESS_COMPILE

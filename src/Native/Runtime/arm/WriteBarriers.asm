@@ -1,7 +1,6 @@
-;;
-;; Copyright (c) Microsoft. All rights reserved.
-;; Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-;;
+;; Licensed to the .NET Foundation under one or more agreements.
+;; The .NET Foundation licenses this file to you under the MIT license.
+;; See the LICENSE file in the project root for more information.
 
 ;;
 ;; Define the helpers used to implement the write barrier required when writing an object reference into a
@@ -257,6 +256,9 @@ $WriteBarrierFunction
         ;; Write the reference into the location. Note that we rely on the fact that no GC can occur between
         ;; here and the card table update we may perform below.
         ALTERNATE_ENTRY $WriteBarrierFunctionAvLocation
+        IF "$REFREG" == "R1"
+        ALTERNATE_ENTRY RhpCheckedAssignRefAVLocation
+        ENDIF
         str     $REFREG, [$DESTREG]
 
         INSERT_CHECKED_WRITE_BARRIER_CORE $DESTREG, $REFREG
@@ -265,7 +267,7 @@ $WriteBarrierFunction
 
     MEND
 
-	
+
     MACRO
         ;; Define a helper with a name of the form RhpAssignRefR0 etc. The location to be updated is in
         ;; $DESTREG. The object reference that will be assigned into that location is in one of the other
@@ -304,6 +306,9 @@ $WriteBarrierFunction
         ;; Write the reference into the location. Note that we rely on the fact that no GC can occur between
         ;; here and the card table update we may perform below.
         ALTERNATE_ENTRY $WriteBarrierFunctionAvLocation
+        IF "$REFREG" == "R1"
+        ALTERNATE_ENTRY RhpAssignRefAVLocation
+        ENDIF
         str     $REFREG, [$DESTREG]
 
         INSERT_UNCHECKED_WRITE_BARRIER_CORE $DESTREG, $REFREG
@@ -313,7 +318,7 @@ $WriteBarrierFunction
     MEND
 
 ;; One day we might have write barriers for all the possible argument registers but for now we have
-;; just one write barrier that assumes the input registers is R1.
+;; just one write barrier that assumes the input register is R1.
         DEFINE_CHECKED_WRITE_BARRIER R0, R1
 
         DEFINE_UNCHECKED_WRITE_BARRIER R0, R1
@@ -415,6 +420,7 @@ X_Retry
 
         LEAF_END RhpCheckedXchg
 
+#ifndef CORERT
 ;;
 ;; Write barrier used when a large number of bytes possibly containing GC references have been updated. For
 ;; speed we don't try to determine GC series information for the value or array of values. Instead we just
@@ -537,7 +543,7 @@ X_Retry
 
     add     r1, r1, r0                      ; r1 <- end address
     lsr     r0, #LOG2_CLUMP_SIZE            ; r0 <- starting clump
-    add     r1, CLUMP_SIZE-1                ; r1 <- end address + round up 
+    add     r1, CLUMP_SIZE-1                ; r1 <- end address + round up
     lsr     r1, #LOG2_CLUMP_SIZE            ; r1 <- ending clump index (rounded up)
 
     ;; calculate number of clumps to mark (round_up(end) - start)
@@ -570,5 +576,7 @@ NoBarrierRequired
     bx      lr
 
     LEAF_END RhpBulkWriteBarrier
+
+#endif // CORERT
 
     end

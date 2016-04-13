@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 using System;
 using System.Diagnostics;
@@ -19,13 +20,13 @@ namespace Internal.TypeSystem
                 if (_offset == FieldAndOffset.InvalidOffset)
                 {
                     if (IsStatic)
-                        OwningType.ComputeStaticFieldLayout();
+                        OwningType.ComputeStaticFieldLayout(StaticLayoutKind.StaticRegionSizesAndFields);
                     else
-                        OwningType.ComputeInstanceFieldLayout();
+                        OwningType.ComputeInstanceLayout(InstanceLayoutKind.TypeAndFields);
 
                     if (_offset == FieldAndOffset.InvalidOffset)
                     {
-                        // Must be a field that doesn't participate in layout (literal?)
+                        // Must be a field that doesn't participate in layout (literal or RVA mapped)
                         throw new BadImageFormatException();
                     }
                 }
@@ -37,7 +38,7 @@ namespace Internal.TypeSystem
         /// For static fields, represents whether or not the field is held in the GC or non GC statics region
         /// Does not apply to thread static fields.
         /// </summary>
-        public bool HasGCStaticBase
+        public virtual bool HasGCStaticBase
         {
             get
             {

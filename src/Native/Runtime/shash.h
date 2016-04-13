@@ -1,7 +1,6 @@
-//
-// Copyright (c) Microsoft Corporation.  All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 // SHash is a templated closed chaining hash table of pointers.  It provides
 // for multiple entries under the same key, and also for deleting elements.
@@ -73,6 +72,7 @@
 
 
 // disable the "Conditional expression is constant" warning
+#pragma warning(push)
 #pragma warning(disable:4127)
 
 
@@ -104,7 +104,7 @@ class DefaultSHashTraits
     static bool IsNull(const ELEMENT &e) { return e == (const ELEMENT) 0; }
     static bool IsDeleted(const ELEMENT &e) { return e == (const ELEMENT) -1; }
 
-    static void OnFailure(FailureType ft) { }
+    static void OnFailure(FailureType /*ft*/) { }
 
     // No defaults - must specify:
     // 
@@ -627,6 +627,6 @@ public:
 };
 
 
-// restore "Conditional expression is constant" warning to default value
-#pragma warning(default:4127)
+// restore "Conditional expression is constant" warning to previous value
+#pragma warning(pop)
 

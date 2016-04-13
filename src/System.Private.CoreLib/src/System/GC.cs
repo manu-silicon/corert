@@ -1,5 +1,6 @@
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information.
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 //
 // Exposes features of the Garbage Collector to managed code.
@@ -74,7 +75,7 @@ namespace System
 
             if ((mode < GCCollectionMode.Default) || (mode > GCCollectionMode.Optimized))
             {
-                throw new ArgumentOutOfRangeException(SR.ArgumentOutOfRange_Enum);
+                throw new ArgumentOutOfRangeException("mode", SR.ArgumentOutOfRange_Enum);
             }
 
             int iInternalModes = 0;
@@ -121,11 +122,9 @@ namespace System
         }
 
         [Intrinsic]
+        [MethodImplAttribute(MethodImplOptions.NoInlining)] // disable optimizations
         public static void KeepAlive(Object obj)
         {
-            // This is actually an intrinsic and not a recursive function call.
-            // We have it here so that you can do "ldftn" on the method or reflection invoke it.
-            KeepAlive(obj);
         }
 
         // Returns the maximum GC generation.  Currently assumes only 1 heap.
@@ -217,7 +216,6 @@ namespace System
         /// Xnew = UMDeath/UMTotal * 0.5 + Xprev
         /// </summary>
         /// <param name="bytesAllocated"></param>
-        [SecurityCritical] // required to match contract
         public static void AddMemoryPressure(long bytesAllocated)
         {
             if (bytesAllocated <= 0)
@@ -287,7 +285,6 @@ namespace System
             }
         }
 
-        [SecurityCritical] // required to match contract
         public static void RemoveMemoryPressure(long bytesAllocated)
         {
             if (bytesAllocated <= 0)

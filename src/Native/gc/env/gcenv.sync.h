@@ -1,25 +1,11 @@
-//
-// Copyright (c) Microsoft. All rights reserved.
-// Licensed under the MIT license. See LICENSE file in the project root for full license information. 
-//
+// Licensed to the .NET Foundation under one or more agreements.
+// The .NET Foundation licenses this file to you under the MIT license.
+// See the LICENSE file in the project root for more information.
 
 // -----------------------------------------------------------------------------------------------------------
 //
 // Helper classes expected by the GC
 //
-class EEThreadId
-{
-public:
-    EEThreadId(UINT32 uiId) : m_uiId(uiId) {}
-    bool IsSameThread()
-    {
-        return m_uiId == GetCurrentThreadId();
-    }
-
-private:
-    UINT32 m_uiId;
-};
-
 #define CRST_REENTRANCY         0
 #define CRST_UNSAFE_SAMELEVEL   0
 #define CRST_UNSAFE_ANYMODE     0
@@ -33,37 +19,37 @@ typedef int CrstType;
 
 class CrstStatic
 {
-    CRITICAL_SECTION m_cs;
+    CLRCriticalSection m_cs;
 #ifdef _DEBUG
-    UINT32 m_holderThreadId;
+    EEThreadId m_holderThreadId;
 #endif
 
 public:
     bool InitNoThrow(CrstType eType, CrstFlags eFlags = CRST_DEFAULT)
     {
-        UnsafeInitializeCriticalSection(&m_cs);
+        m_cs.Initialize();
         return true;
     }
 
     void Destroy()
     {
-        UnsafeDeleteCriticalSection(&m_cs);
+        m_cs.Destroy();
     }
 
     void Enter()
     {
-        UnsafeEEEnterCriticalSection(&m_cs);
+        m_cs.Enter();
 #ifdef _DEBUG
-        m_holderThreadId = GetCurrentThreadId();
+        m_holderThreadId.SetToCurrentThread();
 #endif
     }
 
     void Leave()
     {
 #ifdef _DEBUG
-        m_holderThreadId = 0;
+        m_holderThreadId.Clear();
 #endif
-        UnsafeEELeaveCriticalSection(&m_cs);
+        m_cs.Leave();
     }
 
 #ifdef _DEBUG
@@ -74,7 +60,7 @@ public:
 
     bool OwnedByCurrentThread()
     {
-        return GetHolderThreadId().IsSameThread();
+        return GetHolderThreadId().IsCurrentThread();
     }
 #endif
 };
