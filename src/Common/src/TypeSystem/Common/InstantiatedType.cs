@@ -132,18 +132,37 @@ namespace Internal.TypeSystem
         // TODO: Substitutions, generics, modopts, ...
         public override MethodDesc GetMethod(string name, MethodSignature signature)
         {
-            foreach (var meth in _typeDef.GetMethods())
+            MethodDesc typicalMethodDef = null;
+
+            // TODO: Do we really need to adapt the signature, or do we assume clients
+            // TODO: will provide a properly instantiated signature?
+            if (signature != null)
+                signature = signature.InstantiateSignature(Instantiation, Instantiation.Empty);
+
+            foreach (var method in _typeDef.GetMethods())
             {
-                if (meth.Name == name)
+                if (method.Name == name)
                 {
-                    MethodDesc result = meth.InstantiateSignature(Instantiation, new Instantiation());
-                    if (result.Signature.Equals(signature.InstantiateSignature(Instantiation, new Instantiation())))
+                    if (signature == null)
                     {
-                        return result;
+                        typicalMethodDef = method;
+                        break;
+                    }
+                    else
+                    {
+                        //TODO: This code does not handle generic parameter.
+                        MethodDesc result = method.InstantiateSignature(Instantiation, Instantiation.Empty);
+                        if (result.Signature.Equals(signature))
+                        {
+                            typicalMethodDef = method;
+                            break;
+                        }
                     }
                 }
             }
-            return null;
+            if (typicalMethodDef == null)
+                return null;
+            return _typeDef.Context.GetMethodForInstantiatedType(typicalMethodDef, this);
         }
 
         public override MethodDesc GetStaticConstructor()

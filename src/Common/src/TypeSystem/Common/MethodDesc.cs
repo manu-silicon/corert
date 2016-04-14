@@ -267,6 +267,9 @@ namespace Internal.TypeSystem
             get;
         }
 
+        /// <summary>
+        /// Type were method has been defined.
+        /// </summary>
         public abstract TypeDesc OwningType
         {
             get;
@@ -277,6 +280,9 @@ namespace Internal.TypeSystem
             get;
         }
 
+        /// <summary>
+        /// Generic method instantiation if any. I.e. used to know with which types a generic method has been instantiated.
+        /// </summary>
         public virtual Instantiation Instantiation
         {
             get
@@ -285,6 +291,9 @@ namespace Internal.TypeSystem
             }
         }
 
+        /// <summary>
+        /// Is current a generic method that has been instantiated?
+        /// </summary>
         public bool HasInstantiation
         {
             get
@@ -400,11 +409,22 @@ namespace Internal.TypeSystem
             }
         }
 
+        /// <summary>
+        /// Instantiate current method's signature accordingly to a type instantiation <paramref name="typeInstantiation"/> and/or
+        /// a generic method instantiation <paramref name="methodInstantiation"/>. In other terms, if you have a method involving
+        /// some generic parameters, those generic parameter are replaced by their corresponding instantiation in
+        /// <paramref name="typeInstantiation"/> and/or <paramref name="methodInstantiation"/>
+        /// </summary>
+        /// <param name="typeInstantiation">Types used to replace generic parameter of the enclosing type in the signature.</param>
+        /// <param name="methodInstantiation">Types used to replace generic parameter of the method in the signature.</param>
+        /// <returns>Instantiated method. Returns the same method if no instantiation takes place.</returns>
         public virtual MethodDesc InstantiateSignature(Instantiation typeInstantiation, Instantiation methodInstantiation)
         {
             Instantiation instantiation = Instantiation;
             TypeDesc[] clone = null;
 
+            // This code below is for InstantiatedMethod instances to update their instantiation with
+            // the given one. If instantiation has no effect, avoid allocation of a new array.
             for (int i = 0; i < instantiation.Length; i++)
             {
                 TypeDesc uninst = instantiation[i];
@@ -413,6 +433,7 @@ namespace Internal.TypeSystem
                 {
                     if (clone == null)
                     {
+                        // Copy all entries processed so far to clone.
                         clone = new TypeDesc[instantiation.Length];
                         for (int j = 0; j < clone.Length; j++)
                         {
